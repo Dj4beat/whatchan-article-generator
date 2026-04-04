@@ -281,12 +281,22 @@
     /* ── SEO fields ── */
     .seo-panel {
       background: #0c1220; border: 1px solid #1e293b; border-radius: 7px;
-      padding: 10px 13px; margin-top: 8px; font-family: system-ui,sans-serif; font-size: .75rem;
+      padding: 12px 14px; margin-top: 8px; font-family: system-ui,sans-serif; font-size: .78rem;
       display: none;
     }
     .seo-panel.open { display: block; }
     .seo-row { margin-bottom: 6px; color: #64748b; }
     .seo-row strong { color: #94a3b8; }
+    .seo-section { margin-bottom: 12px; }
+    .seo-section-label { font-size: .68rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px; }
+    .seo-option { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
+    .seo-option-num { color: #475569; flex-shrink: 0; min-width: 14px; }
+    .seo-option-text { flex: 1; color: #cbd5e1; line-height: 1.4; }
+    .seo-option-chars { color: #475569; font-size: .68rem; flex-shrink: 0; white-space: nowrap; margin-top: 2px; }
+    .seo-copy-btn { background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #64748b; font-size: .68rem; padding: 2px 7px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+    .seo-copy-btn:hover { background: #334155; color: #94a3b8; }
+    .kp-found { color: #4ade80; font-size: .7rem; flex-shrink: 0; white-space: nowrap; }
+    .kp-missing { color: #f87171; font-size: .7rem; flex-shrink: 0; white-space: nowrap; }
 
     /* ── QC panel ── */
     .qc-panel {
@@ -1800,54 +1810,60 @@ function buildWpBlock(spec, body, seo) {
 // ═══════════════════════════════════════════════════════════════
 //  SEO FIELDS GENERATION
 // ═══════════════════════════════════════════════════════════════
-function genSeoFields(spec) {
+function genSeoFields(spec, articleBody) {
   var sportLabel = SPORTS[ACTIVE_SPORT].label;
+  // Strip HTML tags for plain-text grounding of keyphrases
+  var bodyText = (articleBody || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000);
   var prompt = 'You are an SEO expert for WhatChan, a UK ' + sportLabel.toLowerCase() + ' media site.\n\n'
     + 'Given this article, produce comprehensive SEO fields as a JSON object (no markdown, no backticks).\n\n'
     + 'Article title: ' + spec.title + '\nCategory: ' + spec.category + '\nPrimary keywords: ' + spec.keywords.join(', ') + '\n'
     + (spec.team ? 'Subject: ' + spec.team + '\n' : '')
+    + (bodyText ? '\nARTICLE BODY TEXT (use this to ground your focus_keyphrases):\n' + bodyText + '\n' : '')
     + '\nReturn this EXACT JSON structure:\n'
     + '{\n'
     + '  "h1": "Compelling H1 headline, keyword-rich, under 80 chars",\n'
     + '  "title_options": ["Title Option 1 | WhatChan (50-65 chars)", "Title Option 2 | WhatChan", "Title Option 3 | WhatChan", "Title Option 4 | WhatChan", "Title Option 5 | WhatChan"],\n'
     + '  "meta_options": ["Meta description 1 (120-160 chars)", "Meta description 2 (120-160 chars)"],\n'
     + '  "url_slug": "keyword-first-lowercase-hyphens-max-8-words",\n'
-    + '  "tags": ["Tag1", "Tag2", "Tag3", "Tag4", "Tag5", "Tag6", "Tag7", "Tag8"],\n'
+    + '  "tags": ["Tag1", "Tag2", "Tag3", "Tag4", "Tag5", "Tag6", "Tag7", "Tag8", "Tag9", "Tag10"],\n'
     + '  "focus_keyphrases": ["keyphrase 1", "keyphrase 2", "keyphrase 3"],\n'
     + '  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6", "keyword7", "keyword8", "keyword9", "keyword10"]\n'
     + '}\n\n'
     + 'Rules:\n'
     + '- All 5 title_options must be 50-65 characters each (count carefully)\n'
     + '- Both meta_options must be 120-160 characters each\n'
-    + '- tags: 6-10 proper nouns and topics mentioned in the article\n'
-    + '- focus_keyphrases: 2-3 word phrases people would search for\n'
+    + '- tags: up to 10 items — mix of named entities (clubs, players, competitions), sport name, and general topic descriptors\n'
+    + '- focus_keyphrases: CRITICAL — exactly 3 phrases of 2-4 words. Each phrase MUST appear VERBATIM (word-for-word, case-insensitive) somewhere in the article body text provided above. These are Yoast SEO focus keyphrases — exact match is required. Choose phrases you can confirm exist in the body.\n'
     + '- keywords: 10-15 individual keywords for the article\n'
     + '- British English throughout\n'
     + '- Raw JSON only, no explanations';
 
   // Use free model for SEO grunt work
-  return callFreeLLM('You are an SEO specialist. Output only valid JSON, nothing else.', prompt, 800)
+  return callFreeLLM('You are an SEO specialist. Output only valid JSON, nothing else.', prompt, 1000)
     .then(function(raw) {
       var clean = raw.replace(/^```[\w]*\n?/,'').replace(/```$/,'').trim();
       var start = clean.indexOf('{'); var end = clean.lastIndexOf('}');
       if (start >= 0 && end > start) clean = clean.slice(start, end + 1);
       var obj = JSON.parse(clean);
+      var kps = obj.focus_keyphrases || spec.keywords.slice(0,3);
       return {
-        h1:           obj.h1 || spec.title,
-        seoTitle:     (obj.title_options && obj.title_options[0]) || spec.title + ' | WhatChan',
-        titleOptions: obj.title_options || [],
-        metaDesc:     (obj.meta_options && obj.meta_options[0]) || '',
-        metaOptions:  obj.meta_options || [],
-        urlSlug:      obj.url_slug || spec.slug,
-        tags:         obj.tags || spec.keywords,
-        keyphrases:   obj.focus_keyphrases || spec.keywords.slice(0,3),
-        allKeywords:  obj.keywords || spec.keywords
+        h1:               obj.h1 || spec.title,
+        seoTitle:         (obj.title_options && obj.title_options[0]) || spec.title + ' | WhatChan',
+        titleOptions:     obj.title_options || [],
+        metaDesc:         (obj.meta_options && obj.meta_options[0]) || '',
+        metaOptions:      obj.meta_options || [],
+        urlSlug:          obj.url_slug || spec.slug,
+        tags:             obj.tags || spec.keywords,
+        keyphrases:       kps,
+        keyphraseMatches: verifyKeyphrases(kps, articleBody || ''),
+        allKeywords:      obj.keywords || spec.keywords
       };
     }).catch(function() {
       return {
         h1: spec.title, seoTitle: spec.title.slice(0,55) + ' | WhatChan',
         titleOptions: [], metaDesc: spec.title + ' — WhatChan.', metaOptions: [],
-        urlSlug: spec.slug, tags: spec.keywords, keyphrases: spec.keywords.slice(0,3),
+        urlSlug: spec.slug, tags: spec.keywords,
+        keyphrases: spec.keywords.slice(0,3), keyphraseMatches: [],
         allKeywords: spec.keywords
       };
     });
@@ -2154,7 +2170,7 @@ function runArticlePipeline(opts) {
         return qualityCheck(spec, r.draft, qcContext);
       }).then(function(qc) {
         return delay(2000).then(function() {
-          return genSeoFields(spec);
+          return genSeoFields(spec, r.draft);
         }).then(function(seo) {
           return { draft: r.draft, newsContext: r.newsContext, verifiedFacts: r.verifiedFacts, qc: qc, seo: seo, hadHallucinations: r.hadHallucinations };
         });
@@ -2297,7 +2313,7 @@ function runEgGenerate() {
       .then(function(draft) {
         return Promise.all([
           qualityCheck(spec, draft, ''),
-          genSeoFields(spec)
+          genSeoFields(spec, draft)
         ]).then(function(r) { return { draft: draft, qc: r[0], seo: r[1] }; });
       })
       .then(function(r) {
@@ -2387,10 +2403,7 @@ function renderGenList() {
       +   '<button class="btn btn-ghost sm" style="color:#f87171;" onclick="deleteArticle(' + i + ')">Delete</button>'
       + '</div>'
       + '<div class="seo-panel" id="seo-panel-' + i + '">'
-      +   (g.seo ? '<div class="seo-row"><strong>H1:</strong> ' + escHtml(g.seo.h1) + '</div>'
-      +   '<div class="seo-row"><strong>SEO Title:</strong> ' + escHtml(g.seo.seoTitle) + '</div>'
-      +   '<div class="seo-row"><strong>Meta Desc:</strong> ' + escHtml(g.seo.metaDesc) + '</div>'
-      +   '<div class="seo-row"><strong>Slug:</strong> ' + escHtml(g.seo.urlSlug) + '</div>' : '')
+      +   buildSeoPanel(g, i)
       + '</div>'
       + '<div class="qc-panel" id="qc-panel-' + i + '">'
       +   (g.qc ? '<div><strong>Verdict:</strong> <span class="' + (g.qc.verdict === 'PASS' ? 'qc-pass' : 'qc-fail') + '">' + g.qc.verdict + '</span> (confidence: ' + g.qc.confidence + '%)</div>'
@@ -2402,6 +2415,69 @@ function renderGenList() {
       + '</div>';
     list.appendChild(card);
   });
+}
+
+function buildSeoPanel(g, i) {
+  if (!g.seo) return '';
+  var seo = g.seo;
+
+  function optionRow(val, num) {
+    var chars = (val || '').length;
+    return '<div class="seo-option">'
+      + (num !== undefined ? '<div class="seo-option-num">' + num + '.</div>' : '')
+      + '<div class="seo-option-text">' + escHtml(val || '') + '</div>'
+      + '<div class="seo-option-chars">[' + chars + ']</div>'
+      + '<button class="seo-copy-btn" data-val="' + escHtml(val || '') + '" onclick="copySeoField(this)">Copy</button>'
+      + '</div>';
+  }
+
+  // Verify keyphrases against the final article at render time
+  var kpMatches = verifyKeyphrases(seo.keyphrases, g.wp || '');
+
+  var h = '';
+
+  // H1
+  h += '<div class="seo-section"><div class="seo-section-label">H1 Headline</div>'
+    + optionRow(seo.h1) + '</div>';
+
+  // Title options
+  var titles = seo.titleOptions && seo.titleOptions.length ? seo.titleOptions : [seo.seoTitle];
+  h += '<div class="seo-section"><div class="seo-section-label">SEO Title Options — pick one for the browser tab / Google result (50-65 chars)</div>'
+    + titles.map(function(t, n) { return optionRow(t, n + 1); }).join('')
+    + '</div>';
+
+  // Meta options
+  var metas = seo.metaOptions && seo.metaOptions.length ? seo.metaOptions : [seo.metaDesc];
+  h += '<div class="seo-section"><div class="seo-section-label">Meta Description Options — pick one (120-160 chars)</div>'
+    + metas.map(function(m, n) { return optionRow(m, n + 1); }).join('')
+    + '</div>';
+
+  // Slug
+  h += '<div class="seo-section"><div class="seo-section-label">URL Slug</div>'
+    + optionRow(seo.urlSlug) + '</div>';
+
+  // Tags
+  var tagsStr = (seo.tags || []).join(', ');
+  h += '<div class="seo-section"><div class="seo-section-label">Tags — paste into WordPress tags field (up to 10)</div>'
+    + '<div class="seo-option">'
+    + '<div class="seo-option-text">' + escHtml(tagsStr) + '</div>'
+    + '<button class="seo-copy-btn" data-val="' + escHtml(tagsStr) + '" onclick="copySeoField(this)">Copy All</button>'
+    + '</div></div>';
+
+  // Focus keyphrases
+  h += '<div class="seo-section"><div class="seo-section-label">Focus Keyphrases — must appear verbatim in article (Yoast SEO)</div>';
+  kpMatches.forEach(function(km) {
+    h += '<div class="seo-option">'
+      + '<div class="seo-option-text">' + escHtml(km.phrase) + '</div>'
+      + (km.found
+          ? '<span class="kp-found">&#10003; in article</span>'
+          : '<span class="kp-missing">&#10007; not found — do not use</span>')
+      + '<button class="seo-copy-btn" data-val="' + escHtml(km.phrase) + '" onclick="copySeoField(this)">Copy</button>'
+      + '</div>';
+  });
+  h += '</div>';
+
+  return h;
 }
 
 function toggleSeo(i) {
@@ -2452,6 +2528,34 @@ function copyWp(idx) {
 function flashCopy(idx) {
   var btn = document.getElementById('copy-btn-' + idx);
   if (btn) { btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = 'Copy HTML'; }, 2000); }
+}
+
+function copyText(text, btnEl) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() { flashBtn(btnEl); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    flashBtn(btnEl);
+  }
+}
+function flashBtn(el) {
+  if (!el) return;
+  var orig = el.textContent;
+  el.textContent = 'Copied!';
+  setTimeout(function() { el.textContent = orig; }, 1500);
+}
+function copySeoField(btn) {
+  copyText(btn.getAttribute('data-val') || '', btn);
+}
+
+// Check which focus keyphrases appear verbatim in final article (case-insensitive)
+function verifyKeyphrases(keyphrases, articleHtml) {
+  var text = (articleHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+  return (keyphrases || []).map(function(kp) {
+    return { phrase: kp, found: text.indexOf(kp.toLowerCase()) >= 0 };
+  });
 }
 
 function openTab(idx) {
@@ -2695,7 +2799,7 @@ function generateFromCustom() {
       addLog('QC + SEO...', 'ok');
       return Promise.all([
         qualityCheck(spec, draft, desc || ''),
-        genSeoFields(spec)
+        genSeoFields(spec, draft)
       ]).then(function(r) { return { draft: draft, qc: r[0], seo: r[1] }; });
     })
     .then(function(r) {
