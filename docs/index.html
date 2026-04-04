@@ -1145,6 +1145,41 @@ var S = {
   uploadedContext: {},      // key -> { name, text }
 };
 
+var STORAGE_KEY    = 'wc_articles_v1';
+var SEVEN_DAYS_MS  = 7 * 24 * 60 * 60 * 1000;
+
+function saveArticles() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(S.generated));
+  } catch(e) {
+    // localStorage full or unavailable — fail silently
+  }
+}
+
+function loadArticles() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    var items = JSON.parse(raw);
+    var cutoff = Date.now() - SEVEN_DAYS_MS;
+    // Keep only articles saved within the last 7 days
+    S.generated = items.filter(function(a) { return a.savedAt && a.savedAt > cutoff; });
+    if (S.generated.length !== items.length) {
+      // Some expired — persist the pruned list immediately
+      saveArticles();
+    }
+  } catch(e) {
+    S.generated = [];
+  }
+}
+
+function formatSavedDate(ts) {
+  var days = Math.floor((Date.now() - ts) / 86400000);
+  if (days === 0) return 'saved today';
+  if (days === 1) return 'saved yesterday';
+  return 'saved ' + days + 'd ago';
+}
+
 var EST_SECS = { standard: 45, medium: 65, longform: 90 };
 function getEstSecs() {
   if (S.articleLength === 'custom') return Math.round((S.customWordCount / 800) * 45);
@@ -2231,8 +2266,9 @@ function runArticlePipeline(opts) {
         spec: spec, wp: wp, seo: result.seo, status: 'done',
         articleLength: articleLength, qc: result.qc,
         wasRewritten: result.wasRewritten, eeatPolished: true,
-        needsReview: result.needsReview
+        needsReview: result.needsReview, savedAt: Date.now()
       });
+      saveArticles();
       document.getElementById('gen-count').textContent = S.generated.length;
       renderGenList();
     })
@@ -2337,8 +2373,10 @@ function runEgGenerate() {
         S.generated.push({
           spec: spec, wp: wp, seo: result.seo, status: 'done',
           articleLength: articleLength, qc: result.qc,
-          wasRewritten: result.wasRewritten || false, eeatPolished: true
+          wasRewritten: result.wasRewritten || false, eeatPolished: true,
+          savedAt: Date.now()
         });
+        saveArticles();
         document.getElementById('gen-count').textContent = S.generated.length;
         addLog('Done: ' + spec.title, 'ok');
         renderGenList();
@@ -2393,7 +2431,7 @@ function renderGenList() {
       +   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + reviewBadge + qcBadge + eatBadge + rewriteBadge + '</div>'
       + '</div>'
       + '<div class="gen-title">' + escHtml(g.seo ? g.seo.h1 : g.spec.title) + '</div>'
-      + '<div class="gen-meta">' + g.spec.category + ' &middot; ' + TODAY_STR + '</div>'
+      + '<div class="gen-meta">' + g.spec.category + ' &middot; ' + TODAY_STR + (g.savedAt ? ' &middot; ' + formatSavedDate(g.savedAt) : '') + '</div>'
       + '<div class="gen-actions">'
       +   '<button class="btn btn-primary sm" onclick="togglePreview(' + i + ')">Preview</button>'
       +   '<button class="btn btn-ghost sm" onclick="copyWp(' + i + ')" id="copy-btn-' + i + '">Copy HTML</button>'
@@ -2566,6 +2604,7 @@ function openTab(idx) {
 
 function deleteArticle(idx) {
   S.generated.splice(idx, 1);
+  saveArticles();
   if (S.previewIdx === idx) closeSidePreview();
   if (S.previewIdx > idx) S.previewIdx--;
   document.getElementById('gen-count').textContent = S.generated.length;
@@ -2825,8 +2864,10 @@ function generateFromCustom() {
       S.generated.push({
         spec: spec, wp: wp, seo: result.seo, status: 'done',
         articleLength: articleLength, qc: result.qc,
-        wasRewritten: result.wasRewritten || false, eeatPolished: true
+        wasRewritten: result.wasRewritten || false, eeatPolished: true,
+        savedAt: Date.now()
       });
+      saveArticles();
       document.getElementById('gen-count').textContent = S.generated.length;
       addLog('Custom article complete: ' + spec.title, 'ok');
       renderGenList();
@@ -3006,6 +3047,8 @@ function switchSport(sportId) {
 //  INIT
 // ═══════════════════════════════════════════════════════════════
 (function init() {
+  loadArticles();
+  document.getElementById('gen-count').textContent = S.generated.length;
   renderSportBar();
   rebuildEntityDropdown();
   rebuildTypeDropdown();
