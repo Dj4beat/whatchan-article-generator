@@ -1161,7 +1161,11 @@ function cleanMarkdown(html) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
     .replace(/\[insert[^\]]*\]/gi, '')
     .replace(/\[TBC[^\]]*\]/gi, '')
-    .replace(/\[unknown[^\]]*\]/gi, '');
+    .replace(/\[unknown[^\]]*\]/gi, '')
+    // Remove truncated quotes ending with ... (straight and curly quotes)
+    .replace(/"[^"<>]{3,}\.{3}"?/g, '')
+    .replace(/\u201c[^\u201d<>]{3,}\.{3}\u201d?/g, '')
+    .replace(/&ldquo;[^<>]{3,}\.{3}(?:&rdquo;)?/g, '');
 }
 
 function apiPost(payload, _retryCount) {
@@ -1497,6 +1501,7 @@ function getSystemPrompt() {
     + '- NEVER invent stats, scores, or records\n'
     + '- NEVER leave placeholder text like [insert date], [insert name]\n'
     + '- NEVER attribute quotes to people not named in the source\n'
+    + '- NEVER reproduce a quote that is truncated or cut off. A truncated quote ends with "..." or cuts off mid-word/mid-sentence. If a quote in your source ends with "..." it was cut off by the feed — omit it entirely or paraphrase the sentiment without using quotation marks. A published article must only contain complete, coherent quotes.\n'
     + '- Write around gaps — a thinner accurate article is better than a full hallucinated one\n\n'
     + 'AUTHOR & BYLINE:\n'
     + '- This article is written by ' + AUTHOR.name + ', WhatChan ' + sport.label + ' writer\n'
@@ -1890,6 +1895,7 @@ function hallucinationScan(articleHtml, sourceText, trustedContext) {
     + '- Any player\'s current status (injured, suspended, on loan, signed, transferred) — critical\n'
     + '- Any recent result or score not in source — critical\n'
     + '- Any quote not in source — critical\n'
+    + '- Any truncated or cut-off quote — a quote that ends with "..." or is clearly incomplete mid-sentence — critical\n'
     + '- Any statistic or record not in source — major\n'
     + '- Placeholder text: [insert ...], [TBC], [unknown] — critical\n\n'
     + 'Do NOT flag: general tactical analysis, historical context clearly framed as historical, opinion framed as opinion.\n\n'
@@ -1897,7 +1903,7 @@ function hallucinationScan(articleHtml, sourceText, trustedContext) {
     + '{\n'
     + '  "hallucinations_found": true | false,\n'
     + '  "items": [\n'
-    + '    { "type": "current_manager"|"current_club"|"current_status"|"fake_quote"|"invented_stat"|"invented_name"|"placeholder", "text": "exact phrase from article", "action": "remove"|"soften" }\n'
+    + '    { "type": "current_manager"|"current_club"|"current_status"|"fake_quote"|"truncated_quote"|"invented_stat"|"invented_name"|"placeholder", "text": "exact phrase from article", "action": "remove"|"soften" }\n'
     + '  ]\n'
     + '}';
 
