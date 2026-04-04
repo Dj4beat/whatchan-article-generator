@@ -1162,47 +1162,92 @@ function preResearch(title, sourceText) {
 }
 
 // Deep research for match articles — uses Perplexity to find fixture/result data
+// Every line of output must contain a SPECIFIC fact (name, number, date, score).
+// If data cannot be found, say "NOT FOUND" — never approximate or generalise.
 function preResearchMatch(team, typeId) {
   var prompt;
   if (typeId === 'preview') {
-    prompt = 'You are a sports journalist preparing a match preview.\n\n'
-      + 'TEAM: ' + team + '\n\n'
-      + 'Find and confirm ALL of the following using current web sources:\n'
-      + '1. NEXT MATCH: Exact opponent, date (day/month/year), kick-off time (GMT/BST), venue (home or away), competition name\n'
-      + '2. ' + team + ' FORM: Last 5 results — for each give: opponent, score, competition, home/away\n'
-      + '3. OPPONENT FORM: Last 5 results — same detail\n'
-      + '4. LEAGUE TABLE: Current position, points, goal difference for ' + team + ' and the opponent\n'
-      + '5. TEAM NEWS — ' + team + ': Confirmed injuries (player name, injury type, expected return), suspensions\n'
-      + '6. TEAM NEWS — Opponent: Same detail\n'
-      + '7. HEAD-TO-HEAD: Last 5 meetings between these sides — result, venue, competition, standout moments\n'
-      + '8. MANAGER — ' + team + ': Full name (confirmed, currently in post)\n'
-      + '9. MANAGER — Opponent: Full name (confirmed, currently in post)\n'
-      + '10. HOW TO WATCH: Check live-footballontv.com for the exact UK TV channel(s) broadcasting this match. State the channel name, kick-off time (GMT/BST), and any streaming options (Sky Go, Amazon Prime Video, iPlayer, ITVX, etc.)\n\n'
-      + 'Start your response with: "MATCH PREVIEW RESEARCH — ' + team + ':"\n'
-      + 'Only include facts you can confirm from current web sources. No speculation.';
+    prompt = 'TASK: Find EXACT, SPECIFIC data for a ' + team + ' match preview article.\n\n'
+      + 'CRITICAL: Every answer must contain SPECIFIC names, numbers, dates. If you cannot confirm a data point, write "NOT FOUND" for that item. NEVER write generic statements like "both teams will be looking to" or "the match is expected to be competitive".\n\n'
+      + '1. NEXT FIXTURE\n'
+      + '   - Exact opponent name\n'
+      + '   - Exact date (e.g. Saturday 12 April 2026)\n'
+      + '   - Kick-off time in GMT or BST\n'
+      + '   - Venue: stadium name + home or away for ' + team + '\n'
+      + '   - Competition: Premier League / FA Cup / Champions League etc.\n\n'
+      + '2. ' + team + ' CURRENT FORM (last 5 results)\n'
+      + '   List EACH match on a separate line: [date] [H/A] [opponent] [score] [competition]\n'
+      + '   Example: "5 Apr (H) Arsenal 1-2 PL" — include exact scores\n\n'
+      + '3. OPPONENT CURRENT FORM (last 5 results)\n'
+      + '   Same format. Exact scores for each game.\n\n'
+      + '4. LEAGUE TABLE POSITION\n'
+      + '   ' + team + ': Position [X], [Y] points, [Z] GD\n'
+      + '   Opponent: Position [X], [Y] points, [Z] GD\n\n'
+      + '5. ' + team + ' INJURIES AND SUSPENSIONS\n'
+      + '   Check premierinjuries.com and the club\'s official site.\n'
+      + '   For EACH injured player: [Player name] — [injury type] — [expected return date/timeline]\n'
+      + '   For EACH suspended player: [Player name] — [reason] — [games remaining]\n'
+      + '   If no injuries confirmed, write "No injuries currently reported"\n\n'
+      + '6. OPPONENT INJURIES AND SUSPENSIONS\n'
+      + '   Same format. Check premierinjuries.com.\n\n'
+      + '7. HEAD-TO-HEAD — LAST 5 MEETINGS\n'
+      + '   For EACH: [Date] [Venue] [Score] [Competition] [Notable event if any]\n\n'
+      + '8. MANAGERS\n'
+      + '   ' + team + ' manager: [Full name] (confirmed currently in post)\n'
+      + '   Opponent manager: [Full name] (confirmed currently in post)\n\n'
+      + '9. KEY STATS (from whoscored.com or footystats.org)\n'
+      + '   ' + team + ': Goals scored/conceded this season, xG for/against, clean sheets, average possession %\n'
+      + '   Opponent: Same metrics\n\n'
+      + '10. UK TV BROADCAST\n'
+      + '   Check live-footballontv.com specifically.\n'
+      + '   Channel name(s), kick-off time, streaming options (Sky Go, Now TV, Amazon Prime, iPlayer, ITVX)\n'
+      + '   If not listed, write "NOT YET CONFIRMED on live-footballontv.com"';
   } else {
-    prompt = 'You are a sports journalist preparing a match report.\n\n'
-      + 'TEAM: ' + team + '\n\n'
-      + 'Find and confirm ALL of the following about ' + team + '\'s most recent completed match:\n'
-      + '1. MATCH DETAILS: Date, competition, venue, teams, final score\n'
-      + '2. GOALSCORERS: Every goal — scorer, exact minute, assist (if known) — for both sides\n'
-      + '3. MATCH STATS: Possession %, shots on target/total, xG (both teams), corners, yellow cards, red cards\n'
-      + '4. KEY MOMENTS: Red cards (player, minute), penalties (scored/missed), VAR decisions, significant injuries during the match\n'
-      + '5. MANAGER REACTION — ' + team + ': Direct post-match quotes (exact words, attributed)\n'
-      + '6. MANAGER REACTION — Opponent: Direct post-match quotes if available\n'
-      + '7. TABLE IMPACT: League position for both teams after this result, with points total\n'
-      + '8. MANAGER — ' + team + ': Full name (confirmed, currently in post)\n'
-      + '9. MANAGER — Opponent: Full name (confirmed, currently in post)\n'
-      + '10. PLAYER RATINGS: Any published ratings from BBC Sport, Sky Sports, or The Guardian\n\n'
-      + 'Start your response with: "MATCH REPORT RESEARCH — ' + team + ':"\n'
-      + 'Exact facts and figures only. No speculation or guessing.';
+    prompt = 'TASK: Find EXACT, SPECIFIC data for a ' + team + ' match report article.\n\n'
+      + 'CRITICAL: Every answer must contain SPECIFIC names, numbers, minutes. If you cannot confirm a data point, write "NOT FOUND". NEVER write generic statements.\n\n'
+      + '1. MATCH DETAILS\n'
+      + '   Date, competition, stadium, ' + team + ' [score] [opponent] (state which team was home)\n\n'
+      + '2. GOALS — EVERY GOAL\n'
+      + '   For each: [Scorer name] [minute]\' ([assist by name] if known) — [description: penalty/header/open play/free kick]\n\n'
+      + '3. MATCH STATS (from BBC Sport, WhoScored, or Sky Sports)\n'
+      + '   Possession: [X]%-[Y]%\n'
+      + '   Shots (on target/total): [X]-[Y] / [X]-[Y]\n'
+      + '   xG: [team X.XX] - [opponent X.XX]\n'
+      + '   Corners: [X]-[Y]\n'
+      + '   Fouls: [X]-[Y]\n'
+      + '   Yellow cards: [list names and minutes]\n'
+      + '   Red cards: [list names and minutes, or "None"]\n\n'
+      + '4. KEY MATCH EVENTS\n'
+      + '   VAR decisions (what was reviewed, outcome, minute)\n'
+      + '   Penalties (won by whom, minute, scored/missed)\n'
+      + '   Injuries during match (player, minute, nature)\n'
+      + '   Substitutions: list all subs for ' + team + ' with minute\n\n'
+      + '5. MANAGER QUOTES — ' + team + '\n'
+      + '   Find REAL post-match quotes from BBC Sport, Sky Sports, or club site.\n'
+      + '   Direct quotes only — EXACT words in quotation marks with source attribution.\n'
+      + '   If no quotes found, write "POST-MATCH QUOTES NOT FOUND"\n\n'
+      + '6. MANAGER QUOTES — OPPONENT\n'
+      + '   Same format. If not found, state "NOT FOUND".\n\n'
+      + '7. TABLE AFTER RESULT\n'
+      + '   ' + team + ': Now [position], [points] pts\n'
+      + '   Opponent: Now [position], [points] pts\n\n'
+      + '8. MANAGERS\n'
+      + '   ' + team + ' manager: [Full name] (confirmed)\n'
+      + '   Opponent manager: [Full name] (confirmed)\n\n'
+      + '9. PLAYER RATINGS (from BBC Sport, WhoScored, or Sky Sports)\n'
+      + '   List each ' + team + ' starter: [Name] [Rating/10]\n'
+      + '   Source the ratings from a specific publication.\n\n'
+      + '10. FORMATION AND TACTICS\n'
+      + '   ' + team + ' formation: [e.g. 4-2-3-1]\n'
+      + '   Opponent formation: [e.g. 3-5-2]\n'
+      + '   Key tactical observations from match reports';
   }
 
   addLog('Researching ' + (typeId === 'preview' ? 'next fixture' : 'last match') + ' for ' + team + '...');
   return callModel(
     RESEARCH_MODEL,
-    'You are a sports fact-checker with live web access. Search current sources to find exact match data. Only state facts you can verify from current web pages.',
-    prompt, 1500
+    'You are a sports data researcher with live web access. You must return SPECIFIC facts only — exact names, exact numbers, exact dates, exact scores. Never return vague or generic statements. If a data point cannot be confirmed, respond with "NOT FOUND" for that item. Check these sites specifically: premierinjuries.com for injuries, whoscored.com for stats and ratings, live-footballontv.com for UK TV listings, BBC Sport and Sky Sports for match reports and manager quotes.',
+    prompt, 2000
   ).catch(function(e) {
     addLog('Match research unavailable: ' + e.message, 'warn');
     return '';
@@ -1855,22 +1900,36 @@ function buildPrompt(spec, ctx, articleLength, extraContext) {
   if (spec.typeId === 'review') {
     p += '\nMATCH REVIEW EXTRA RULES:\n'
       + '- Structure around the match timeline: build-up, first half, second half, aftermath\n'
-      + '- Include a player ratings section: rate each starter out of 10 with a one-line justification\n'
-      + '- Use a stats strip showing key match stats: possession, shots, xG, passes, fouls\n'
-      + '- Identify key tactical battles and turning points in the match\n'
-      + '- Include manager reaction quotes where available from context\n'
-      + '- End with a "What this means" section covering league position / competition implications\n\n';
+      + '- Include a player ratings section: rate each ' + (spec.team || '') + ' starter out of 10 with a one-line justification that cites a SPECIFIC contribution (e.g. "6 key passes, won 4 aerial duels" — not "had a solid game")\n'
+      + '- Use a stats strip showing EXACT match stats from the source: possession %, shots on target/total, xG, corners, fouls\n'
+      + '- Identify at least two specific key tactical battles with PLAYER NAMES from both sides\n'
+      + '- Manager reaction quotes MUST be REAL direct quotes from the source with full attribution. If no real quotes exist in the source, do NOT fabricate any — write "Post-match reaction was not available at the time of writing" and move on\n'
+      + '- End with a "What this means" section: EXACT league positions and points for both clubs AFTER this result\n\n'
+      + 'QUALITY GATE — MATCH REVIEW:\n'
+      + '- If the source does not contain a specific scoreline, do NOT write the article — return an error instead\n'
+      + '- Every paragraph must contain at least one SPECIFIC fact: a player name, a minute, a stat, a quote. Paragraphs without specific facts will be deleted\n'
+      + '- Do NOT write generic analysis like "the second half was a tense affair". Write specifically: who had possession, what chances were created, which players were involved\n\n';
   }
 
   // Match Preview extra rules
   if (spec.typeId === 'preview') {
     p += '\nMATCH PREVIEW EXTRA RULES:\n'
-      + '- Include confirmed or expected team news and injury updates\n'
-      + '- Head-to-head record between the two sides (last 5 meetings if available)\n'
-      + '- Current form guide for both teams (last 5 results: W/D/L)\n'
-      + '- Key tactical battles to watch (e.g. winger vs full-back, midfield matchup)\n'
-      + '- Include betting odds and a prediction with reasoning\n'
-      + '- How to watch: TV channel, kick-off time, streaming options\n\n';
+      + '- TEAM NEWS: List SPECIFIC injured players by name with injury type and expected return. If the source contains injury data, use it. If no injury data is available, write: "No confirmed injury news at the time of writing. Check premierinjuries.com for the latest updates." Do NOT fill this section with generic text.\n'
+      + '- HEAD-TO-HEAD: List EACH of the last 5 meetings with exact date, exact score, and venue. Not "closely contested" — give the actual results.\n'
+      + '- FORM GUIDE: List EACH of the last 5 results for both teams with exact opponent, exact score, and competition. Present as a clear list, not vague prose.\n'
+      + '- TACTICAL ANALYSIS: Name SPECIFIC players in SPECIFIC matchups. "Rashford vs Dalot" not "the winger vs the full-back". Reference SPECIFIC stats: "averaging 3.2 dribbles per 90" not "known for their dribbling".\n'
+      + '- PREDICTION: Give a specific scoreline with 2-3 sentences of reasoning grounded in the form/stats above.\n'
+      + '- HOW TO WATCH: State the EXACT TV channel and kick-off time from the source data. If live-footballontv.com data is in the context, use it. If no broadcast info is confirmed, write: "Broadcast details not yet confirmed. Check live-footballontv.com for the latest TV listings." Do NOT write "fans are advised to check the latest listings".\n\n'
+      + 'QUALITY GATE — MATCH PREVIEW:\n'
+      + '- If the source does not contain the next fixture opponent and date, do NOT proceed — return an error instead\n'
+      + '- Every sentence must contain a SPECIFIC fact. Remove any sentence that could apply to ANY match between ANY two teams\n'
+      + '- BANNED PHRASES (these indicate generic filler and must NEVER appear):\n'
+      + '  "both teams will be looking to", "is expected to be", "could pose challenges",\n'
+      + '  "promises to be an exciting", "eager to", "determined to make their mark",\n'
+      + '  "will aim to leverage", "the outcome often hinges on", "tactical discipline being key",\n'
+      + '  "a closely fought encounter", "will be looking to impose their style",\n'
+      + '  "according to recent reports", "data suggests"\n'
+      + '- A pullquote MUST be a REAL quote from a real person found in the source. If no real quotes exist, use a strong stat as the pullquote (e.g. "W4 D0 L1 — ' + (spec.team || 'Team') + '\'s record in the last 5 home matches") with the source as attribution.\n\n';
   }
 
   p += '\nREQUIRED STRUCTURE (follow this order):\n\n'
@@ -2113,13 +2172,15 @@ function hallucinationScan(articleHtml, sourceText, trustedContext) {
     + '- Any quote not in source — critical\n'
     + '- Any truncated or cut-off quote — a quote that ends with "..." or is clearly incomplete mid-sentence — critical\n'
     + '- Any statistic or record not in source — major\n'
-    + '- Placeholder text: [insert ...], [TBC], [unknown] — critical\n\n'
-    + 'Do NOT flag: general tactical analysis, historical context clearly framed as historical, opinion framed as opinion.\n\n'
+    + '- Placeholder text: [insert ...], [TBC], [unknown] — critical\n'
+    + '- GENERIC FILLER: Sentences that contain NO specific fact (no name, no number, no date, no score) and could apply to literally any match — critical. Examples: "both teams will be looking to put on a strong performance", "the midfield is expected to be a key area of contention", "the outcome often hinges on tactical discipline". These must be flagged for removal.\n'
+    + '- FABRICATED QUOTES: Any pullquote or inline quote attributed to someone where the exact words are NOT in the source — critical\n\n'
+    + 'Do NOT flag: specific tactical analysis naming real players, historical facts framed as historical, opinion clearly framed as opinion, predictions based on stated evidence.\n\n'
     + 'Return ONLY a JSON object (no markdown):\n'
     + '{\n'
     + '  "hallucinations_found": true | false,\n'
     + '  "items": [\n'
-    + '    { "type": "current_manager"|"current_club"|"current_status"|"fake_quote"|"truncated_quote"|"invented_stat"|"invented_name"|"placeholder", "text": "exact phrase from article", "action": "remove"|"soften" }\n'
+    + '    { "type": "current_manager"|"current_club"|"current_status"|"fake_quote"|"truncated_quote"|"invented_stat"|"invented_name"|"placeholder"|"generic_filler"|"fabricated_quote", "text": "exact phrase from article", "action": "remove"|"soften" }\n'
     + '  ]\n'
     + '}';
 
@@ -2514,18 +2575,25 @@ function runEgGenerate() {
     // Evergreen articles: model knowledge only, lighter pipeline
     var researchPromise;
     if (isMatchArticle) {
-      addLog('[' + spec.team + '] Step 1/6: Researching ' + (spec.typeId === 'preview' ? 'next fixture' : 'last match') + '...');
-      researchPromise = preResearchMatch(spec.team, spec.typeId)
-        .then(function(research) {
-          if (research) addLog('[' + spec.team + '] Fixture research complete', 'ok');
-          return delay(2000).then(function() {
-            addLog('[' + spec.team + '] Step 2/6: Fetching match statistics...');
-            return fetchMatchStats(spec.team, spec.typeId, research || '');
-          }).then(function(stats) {
-            if (stats) addLog('[' + spec.team + '] Statistics complete', 'ok');
-            return [research, stats].filter(Boolean).join('\n\n---\n\n');
-          });
+      addLog('[' + spec.team + '] Step 1/6: Researching fixture + fetching reference data...');
+      // Perplexity research AND reference site scraping run in PARALLEL
+      researchPromise = Promise.all([
+        preResearchMatch(spec.team, spec.typeId),
+        fetchReferenceSites(spec.team, spec.typeId)
+      ]).then(function(parallel) {
+        var research = parallel[0];
+        var refData = parallel[1];
+        if (research) addLog('[' + spec.team + '] Fixture research complete', 'ok');
+        if (refData) addLog('[' + spec.team + '] Reference sites loaded (injuries/lineups/TV)', 'ok');
+        addLog('[' + spec.team + '] Step 2/6: Fetching match statistics...');
+        return delay(2000).then(function() {
+          return fetchMatchStats(spec.team, spec.typeId, research || '');
+        }).then(function(stats) {
+          if (stats) addLog('[' + spec.team + '] Statistics complete', 'ok');
+          return [research, stats].filter(Boolean).join('\n\n---\n\n')
+            + (refData ? '\n\n=== REFERENCE DATA (premierinjuries.com / rotowire.com / live-footballontv.com) ===\n' + refData : '');
         });
+      });
     } else {
       researchPromise = Promise.resolve('');
     }
@@ -2536,7 +2604,13 @@ function runEgGenerate() {
         addLog('[' + spec.team + '] ' + stepLabel + ': Writing article...');
         var writePrompt = buildPrompt(spec, matchContext || '', articleLength, '');
         if (matchContext) {
-          writePrompt += '\n\nCRITICAL: Use ONLY the research data above for all match-specific facts (scores, dates, fixtures, managers, player status). Do NOT use training knowledge for any time-sensitive claim.';
+          writePrompt += '\n\nCRITICAL ACCURACY RULES:\n'
+            + '1. Use ONLY the research data above for all match facts — scores, dates, fixtures, managers, injuries, lineups, TV channels. Never use training knowledge for time-sensitive claims.\n'
+            + '2. If REFERENCE DATA is provided (from premierinjuries.com, rotowire.com, live-footballontv.com), treat it as authoritative for injuries, expected lineups, and broadcast details.\n'
+            + '3. EVERY SENTENCE must contain at least one specific fact (a name, a number, a date, a score). Delete any sentence that could apply to any match between any two teams.\n'
+            + '4. If a section has no real data in the research, OMIT THAT SECTION ENTIRELY. A shorter article with real facts beats a longer article with filler.\n'
+            + '5. Quotes must be REAL — exact words from real people found in the research. If no quotes exist, use a strong stat as the pullquote instead. NEVER fabricate quotes.\n'
+            + '6. For "How to Watch" — use the EXACT channel name and kick-off time from the research/reference data. If not confirmed, write one sentence directing readers to live-footballontv.com.';
         }
         return delay(1500).then(function() {
           return callLLM(getSystemPrompt(), writePrompt, baseTokens);
@@ -3152,16 +3226,23 @@ function generateFromCustom() {
     showPipeline(pipelineEl, 'research');
     addLog('Step 1/6: Researching ' + (matchTypeId === 'preview' ? 'next fixture' : 'last match') + ' for ' + club + '...');
 
-    preResearchMatch(club, matchTypeId)
-      .then(function(research) {
+    // Perplexity research AND reference site scraping run in PARALLEL
+    Promise.all([
+      preResearchMatch(club, matchTypeId),
+      fetchReferenceSites(club, matchTypeId)
+    ]).then(function(parallel) {
+        var research = parallel[0];
+        var refData = parallel[1];
         if (research) addLog('Research complete', 'ok');
+        if (refData) addLog('Reference sites loaded (injuries/lineups/TV)', 'ok');
         showPipeline(pipelineEl, 'analyse');
         addLog('Step 2/6: Fetching match statistics from stats sites...');
         return delay(2000).then(function() {
           return fetchMatchStats(club, matchTypeId, research || '');
         }).then(function(stats) {
           if (stats) addLog('Statistics complete', 'ok');
-          return [research, stats].filter(Boolean).join('\n\n---\n\n');
+          return [research, stats].filter(Boolean).join('\n\n---\n\n')
+            + (refData ? '\n\n=== REFERENCE DATA (premierinjuries.com / rotowire.com / live-footballontv.com) ===\n' + refData : '');
         });
       })
       .then(function(matchContext) {
@@ -3169,8 +3250,13 @@ function generateFromCustom() {
         addLog('Step 3/6: Writing article from verified research...');
         var writePrompt = buildPrompt(spec, matchContext || '', articleLength, extra);
         if (matchContext) {
-          writePrompt += '\n\nCRITICAL: Use ONLY the research data above for all match-specific facts. '
-            + 'Never invent or assume scores, fixtures, managers, or player status from training knowledge.';
+          writePrompt += '\n\nCRITICAL ACCURACY RULES:\n'
+            + '1. Use ONLY the research data above for all match facts — scores, dates, fixtures, managers, injuries, lineups, TV channels. Never use training knowledge for time-sensitive claims.\n'
+            + '2. If REFERENCE DATA is provided (from premierinjuries.com, rotowire.com, live-footballontv.com), treat it as authoritative for injuries, expected lineups, and broadcast details.\n'
+            + '3. EVERY SENTENCE must contain at least one specific fact (a name, a number, a date, a score). Delete any sentence that could apply to any match between any two teams.\n'
+            + '4. If a section has no real data in the research, OMIT THAT SECTION ENTIRELY. A shorter article with real facts beats a longer article with filler.\n'
+            + '5. Quotes must be REAL — exact words from real people found in the research. If no quotes exist, use a strong stat as the pullquote instead. NEVER fabricate quotes.\n'
+            + '6. For "How to Watch" — use the EXACT channel name and kick-off time from the research/reference data. If not confirmed, write one sentence directing readers to live-footballontv.com.';
         }
         return delay(1500).then(function() {
           return callLLM(getSystemPrompt(), writePrompt, baseTokens);
@@ -3311,6 +3397,42 @@ function rebuildCustomClubDropdown() {
     sel.appendChild(grp);
   });
   if (prev) sel.value = prev;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  REFERENCE SITE AUTO-FETCH (injuries, lineups, TV listings)
+// ═══════════════════════════════════════════════════════════════
+// Fetches key reference sites via the worker and returns combined text
+function fetchReferenceSites(team, typeId) {
+  var urls = [
+    { url: 'https://www.premierinjuries.com/injury-table.php', label: 'Premier Injuries' },
+    { url: 'https://www.rotowire.com/soccer/lineups.php', label: 'RotoWire Lineups' },
+    { url: 'https://www.live-footballontv.com/', label: 'Live Football on TV' }
+  ];
+  var results = [];
+
+  function fetchOne(item) {
+    return fetch(PROXY_URL + '/api/fetch-article', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
+      body: JSON.stringify({ articleUrl: item.url })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error || !data.text || data.text.length < 50) return '';
+      addLog('Reference data: ' + item.label + ' (' + data.text.length + ' chars)', 'ok');
+      return '=== ' + item.label.toUpperCase() + ' (' + item.url + ') ===\n' + data.text.slice(0, 4000);
+    })
+    .catch(function() {
+      addLog('Reference fetch failed: ' + item.label, 'warn');
+      return '';
+    });
+  }
+
+  // Fetch all in parallel — fail gracefully for each
+  return Promise.all(urls.map(fetchOne)).then(function(fetched) {
+    return fetched.filter(Boolean).join('\n\n');
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
