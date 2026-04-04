@@ -317,6 +317,8 @@
       display: none;
     }
     .qc-panel.open { display: block; }
+    .feedback-panel { display: none; background: #0f172a; border: 1px solid #334155; border-radius: 9px; padding: 14px; margin-top: 8px; }
+    .feedback-panel.open { display: block; }
     .qc-pass { color: #86efac; font-weight: 700; }
     .qc-fail { color: #f87171; font-weight: 700; }
     .qc-issue { margin: 4px 0; padding: 4px 8px; border-radius: 4px; background: #1a1020; }
@@ -1326,6 +1328,8 @@ var CURRENT_WL     = null;   // set at the start of each generation run
 
 var STORAGE_KEY    = 'wc_articles_v1';
 var SEVEN_DAYS_MS  = 7 * 24 * 60 * 60 * 1000;
+var FEEDBACK_KEY   = 'wc_feedback_v1';
+var NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 function saveArticles() {
   try {
@@ -1341,15 +1345,66 @@ function loadArticles() {
     if (!raw) return;
     var items = JSON.parse(raw);
     var cutoff = Date.now() - SEVEN_DAYS_MS;
-    // Keep only articles saved within the last 7 days
     S.generated = items.filter(function(a) { return a.savedAt && a.savedAt > cutoff; });
     if (S.generated.length !== items.length) {
-      // Some expired — persist the pruned list immediately
       saveArticles();
     }
   } catch(e) {
     S.generated = [];
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FEEDBACK MEMORY — learns from editorial feedback + QC failures
+// ═══════════════════════════════════════════════════════════════
+function saveFeedbackEntry(entry) {
+  try {
+    var items = loadFeedbackMemory();
+    // Deduplicate: skip if very similar feedback already exists (same typeId + first 80 chars match)
+    var prefix = (entry.feedback || '').slice(0, 80);
+    var isDupe = items.some(function(e) { return e.typeId === entry.typeId && (e.feedback || '').slice(0, 80) === prefix; });
+    if (!isDupe) {
+      items.push(entry);
+      localStorage.setItem(FEEDBACK_KEY, JSON.stringify(items));
+    }
+  } catch(e) {}
+}
+
+function loadFeedbackMemory() {
+  try {
+    var raw = localStorage.getItem(FEEDBACK_KEY);
+    if (!raw) return [];
+    var items = JSON.parse(raw);
+    var cutoff = Date.now() - NINETY_DAYS_MS;
+    var pruned = items.filter(function(e) { return e.timestamp && e.timestamp > cutoff; });
+    if (pruned.length !== items.length) {
+      localStorage.setItem(FEEDBACK_KEY, JSON.stringify(pruned));
+    }
+    return pruned;
+  } catch(e) { return []; }
+}
+
+function buildFeedbackLessons() {
+  var items = loadFeedbackMemory();
+  if (!items.length) return '';
+  // Group by category, deduplicate feedback text, cap at 1500 chars
+  var seen = {};
+  var lines = [];
+  items.forEach(function(e) {
+    var key = (e.feedback || '').slice(0, 100);
+    if (seen[key]) return;
+    seen[key] = true;
+    var label = (e.category || '') + (e.typeId ? ' (' + e.typeId + ')' : '');
+    lines.push('- [' + label + '] ' + (e.feedback || '').slice(0, 200));
+    // Also include top QC issues if available
+    if (e.qcIssues && e.qcIssues.length) {
+      e.qcIssues.slice(0, 2).forEach(function(iss) {
+        lines.push('  Issue: [' + (iss.severity || '') + '] ' + (iss.description || '').slice(0, 150));
+      });
+    }
+  });
+  var result = lines.join('\n').slice(0, 1500);
+  return result;
 }
 
 function getWlOptions() {
@@ -1717,7 +1772,7 @@ function handleFileUpload(input, key) {
 function getSystemPrompt() {
   var sport = SPORTS[ACTIVE_SPORT];
   var sportLabel = sport.label.toLowerCase();
-  return 'You are an expert ' + sportLabel + ' journalist writing for WhatChan (' + sport.siteUrl + '), a respected UK ' + sportLabel + ' media site. Your writing style closely mirrors BBC Sport and Sky Sports — authoritative, conversational, fact-rich and free of hype.\n\n'
+  var p = 'You are an expert ' + sportLabel + ' journalist writing for WhatChan (' + sport.siteUrl + '), a respected UK ' + sportLabel + ' media site. Your writing style closely mirrors BBC Sport and Sky Sports — authoritative, conversational, fact-rich and free of hype.\n\n'
     + (sport.systemPromptExtra || '')
     + 'ORIGINALITY:\n'
     + '- You are creating a COMPLETELY ORIGINAL article. It must NEVER look copied from the source.\n'
@@ -1784,6 +1839,13 @@ function getSystemPrompt() {
     + '- Output ONLY the inner HTML content (everything that goes inside <div class="wc-post">)\n'
     + '- No DOCTYPE, html, head, body, style, or script tags\n'
     + '- ABSOLUTELY NO MARKDOWN — output pure HTML only. Use <strong> not **, use <em> not *, use <h2> not ##. If you output any markdown syntax the article is broken.';
+
+  // Inject accumulated editorial feedback as lessons the writer must follow
+  var lessons = buildFeedbackLessons();
+  if (lessons) {
+    p += '\n\nEDITORIAL LESSONS LEARNED (from past editorial feedback — avoid these mistakes in this article):\n' + lessons;
+  }
+  return p;
 }
 
 function getEeatSystem() {
@@ -1809,7 +1871,7 @@ function getEeatSystem() {
 
 function getQcSystem() {
   var sportLabel = SPORTS[ACTIVE_SPORT].label.toLowerCase();
-  return 'You are a source-traceability editor for WhatChan, a UK ' + sportLabel + ' media site.\n\n'
+  var p = 'You are a source-traceability editor for WhatChan, a UK ' + sportLabel + ' media site.\n\n'
     + 'IMPORTANT: You do NOT verify facts against your training knowledge — your training is out of date and unreliable for current sports facts.\n'
     + 'You ONLY check whether each claim in the article can be traced back to the provided SOURCE CONTEXT.\n\n'
     + 'CHECK FOR:\n'
@@ -1818,7 +1880,8 @@ function getQcSystem() {
     + '3. UNTRACEABLE STATS — Any number, score, or record not present in the source context.\n'
     + '4. PLACEHOLDER TEXT — Any [insert ...], [TBC], or unfilled bracket remaining in the article.\n'
     + '5. FAQ ANSWERS FROM TRAINING — Any FAQ answer that goes beyond what the source context states. Flag these as critical.\n'
-    + '6. QUALITY — Cliches, filler, repeated phrases, non-British English.\n\n'
+    + '6. QUALITY — Cliches, filler, repeated phrases, non-British English.\n'
+    + '7. GENERIC FILLER — Sentences with no specific fact (no player name, no number, no date, no score) that could apply to any match. These are CRITICAL failures for match articles.\n\n'
     + 'DO NOT flag general tactical analysis, historical comparisons, or opinion/perspective — these are allowed.\n'
     + 'DO flag any specific current fact (who manages X, where Y plays, what score Z was) that is not in the source.\n\n'
     + 'Respond with ONLY a JSON object (no markdown, no backticks):\n'
@@ -1831,6 +1894,13 @@ function getQcSystem() {
     + '  "verified_facts": ["list of key facts confirmed as present in source"]\n'
     + '}\n\n'
     + 'VERDICT: Any critical issue = FAIL. 2+ major = FAIL. Otherwise PASS.';
+
+  // Inject accumulated editorial feedback — QC is EXTRA STRICT on repeat issues
+  var lessons = buildFeedbackLessons();
+  if (lessons) {
+    p += '\n\nHISTORICAL EDITORIAL FEEDBACK — be EXTRA STRICT on these patterns. If ANY of the following appear in the article, it is an AUTOMATIC FAIL:\n' + lessons;
+  }
+  return p;
 }
 
 function buildPrompt(spec, ctx, articleLength, extraContext) {
@@ -2247,6 +2317,67 @@ function rewriteWithFixes(spec, originalHtml, newsContext, qcResult) {
   return callLLM(getSystemPrompt(), prompt, tokens);
 }
 
+// Auto-retry loop: rewrites until QC passes or max attempts exhausted.
+// Each retry carries ALL accumulated issues so the model sees the full history.
+function retryUntilPass(spec, draft, context, firstQcResult, maxAttempts) {
+  maxAttempts = maxAttempts || 3;
+  var allIssues = (firstQcResult.issues || []).slice();
+
+  function attempt(num, currentDraft, prevQc) {
+    if (prevQc.verdict === 'PASS' || num > maxAttempts) {
+      // 3 attempts exhausted — auto-save QC failures to feedback memory so the system learns
+      if (num > maxAttempts && prevQc.verdict === 'FAIL') {
+        addLog('QC FAIL after ' + maxAttempts + ' attempts — saving to feedback memory', 'err');
+        saveFeedbackEntry({
+          category: spec.category || '',
+          typeId: spec.typeId || '',
+          sport: ACTIVE_SPORT,
+          feedback: 'AUTO: QC failed after ' + maxAttempts + ' attempts. Issues: ' + allIssues.slice(0, 5).map(function(i) { return i.description; }).join('; '),
+          qcIssues: allIssues.slice(0, 10),
+          timestamp: Date.now()
+        });
+      }
+      return Promise.resolve({
+        body: currentDraft.trim(),
+        qc: prevQc,
+        wasRewritten: num > 1,
+        needsReview: prevQc.verdict === 'FAIL'
+      });
+    }
+
+    addLog('QC FAIL — retry ' + num + '/' + maxAttempts + ' (fixing ' + allIssues.length + ' accumulated issues)...', 'warn');
+
+    return delay(1500).then(function() {
+      return rewriteWithFixes(spec, currentDraft, context, { issues: allIssues });
+    }).then(function(rewritten) {
+      rewritten = cleanMarkdown(rewritten);
+      addLog('Rewrite ' + num + ' complete — running QC again...');
+      return delay(1500).then(function() {
+        return qualityCheck(spec, rewritten, context);
+      }).then(function(newQc) {
+        // Accumulate new issues (deduplicate by description)
+        var existingDescs = {};
+        allIssues.forEach(function(i) { existingDescs[i.description] = true; });
+        (newQc.issues || []).forEach(function(i) {
+          if (!existingDescs[i.description]) {
+            allIssues.push(i);
+            existingDescs[i.description] = true;
+          }
+        });
+        if (newQc.verdict === 'PASS') {
+          addLog('QC PASS on retry ' + num + '!', 'ok');
+        }
+        return attempt(num + 1, rewritten, newQc);
+      });
+    }).catch(function(e) {
+      addLog('Retry ' + num + ' failed: ' + e.message, 'err');
+      return { body: currentDraft.trim(), qc: prevQc, wasRewritten: num > 1, needsReview: true };
+    });
+  }
+
+  return attempt(1, draft, firstQcResult);
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  PIPELINE: GENERATE FROM FEED ARTICLE
 // ═══════════════════════════════════════════════════════════════
@@ -2439,34 +2570,12 @@ function runArticlePipeline(opts) {
       });
     })
     .then(function(r) {
-      // ── Step 3b: Mandatory rewrite if QC fails, then second QC pass ──
-      var needsReview = r.hadHallucinations;
-      if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
-        var criticalCount = r.qc.issues.filter(function(i){ return i.severity === 'critical'; }).length;
-        addLog('QC FAIL — ' + criticalCount + ' critical issue(s). Rewriting...', 'err');
-        needsReview = true;
-        return rewriteWithFixes(spec, r.draft, r.newsContext + (r.verifiedFacts ? '\n\nWEB-VERIFIED:\n' + r.verifiedFacts : ''), r.qc)
-          .then(function(rewritten) {
-            var fixed = cleanMarkdown(rewritten.trim());
-            // Second QC pass on the rewrite
-            addLog('Running second QC pass on rewrite...');
-            return delay(2000).then(function() {
-              return qualityCheck(spec, fixed, r.newsContext + (r.verifiedFacts ? '\n\nWEB-VERIFIED:\n' + r.verifiedFacts : ''));
-            }).then(function(qc2) {
-              var stillFailing = qc2.verdict === 'FAIL';
-              if (stillFailing) {
-                addLog('Second QC: issues remain — flagging for review', 'err');
-                needsReview = true;
-              } else {
-                addLog('Second QC: passed', 'ok');
-              }
-              return { body: fixed, newsContext: r.newsContext, qc: qc2, seo: r.seo, wasRewritten: true, needsReview: needsReview };
-            });
-          }).catch(function() {
-            return { body: r.draft, newsContext: r.newsContext, qc: r.qc, seo: r.seo, wasRewritten: false, needsReview: true };
-          });
-      }
-      return { body: r.draft, newsContext: r.newsContext, qc: r.qc, seo: r.seo, wasRewritten: false, needsReview: needsReview };
+      // ── Step 3b: Auto-retry loop (max 3 attempts) ──
+      var fullContext = r.newsContext + (r.verifiedFacts ? '\n\nWEB-VERIFIED:\n' + r.verifiedFacts : '');
+      return retryUntilPass(spec, r.draft, fullContext, r.qc, 3)
+        .then(function(retry) {
+          return { body: retry.body, newsContext: r.newsContext, qc: retry.qc, seo: r.seo, wasRewritten: retry.wasRewritten, needsReview: retry.needsReview || r.hadHallucinations };
+        });
     })
     .then(function(r) {
       // ── Step 4: E-E-A-T Polish ──
@@ -2649,20 +2758,10 @@ function runEgGenerate() {
         });
       })
       .then(function(r) {
-        var body = r.draft;
-        if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
-          return rewriteWithFixes(spec, body, r.matchContext || '', r.qc)
-            .then(function(fb) {
-              if (!isMatchArticle) return { body: fb.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: true };
-              return delay(1500).then(function() {
-                return qualityCheck(spec, fb.trim(), r.matchContext);
-              }).then(function(qc2) {
-                return { body: fb.trim(), qc: qc2, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: true };
-              });
-            })
-            .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false }; });
-        }
-        return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false };
+        return retryUntilPass(spec, r.draft, r.matchContext || '', r.qc, 3)
+          .then(function(retry) {
+            return { body: retry.body, qc: retry.qc, seo: r.seo, matchContext: r.matchContext || '', hadHallucinations: r.hadHallucinations || false, wasRewritten: retry.wasRewritten, needsRetryReview: retry.needsReview };
+          });
       })
       .then(function(r) {
         var stepLabel = isMatchArticle ? 'Step 6/6' : 'Step 4/4';
@@ -2677,7 +2776,8 @@ function runEgGenerate() {
         S.generated.push({
           spec: spec, wp: wp, seo: result.seo, status: 'done',
           articleLength: articleLength, qc: result.qc,
-          needsReview: result.hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
+          needsReview: result.needsRetryReview || result.hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
+          matchContext: (result.matchContext || '').slice(0, 3000),
           wasRewritten: result.wasRewritten || false, eeatPolished: true,
           savedAt: Date.now(), wlOptions: CURRENT_WL
         });
@@ -2745,6 +2845,7 @@ function renderGenList() {
       +   '<button class="btn btn-ghost sm" onclick="toggleSeo(' + i + ')">SEO</button>'
       +   '<button class="btn btn-ghost sm" onclick="toggleQc(' + i + ')">QC Details</button>'
       +   '<button class="btn btn-ghost sm" onclick="downloadDocx(' + i + ')" title="Download as Word document">DOCX</button>'
+      +   '<button class="btn btn-ghost sm" style="color:#a78bfa;" onclick="toggleFeedback(' + i + ')">Feedback</button>'
       +   '<button class="btn btn-ghost sm" style="color:#f87171;" onclick="deleteArticle(' + i + ')">Delete</button>'
       + '</div>'
       + '<div class="seo-panel" id="seo-panel-' + i + '">'
@@ -2756,6 +2857,15 @@ function renderGenList() {
             return '<div class="qc-issue ' + iss.severity + '"><strong>' + iss.severity + ':</strong> ' + escHtml(iss.description) + (iss.correction ? ' <em>Fix: ' + escHtml(iss.correction) + '</em>' : '') + '</div>';
           }).join('') : '<div style="color:#86efac;margin-top:4px;">No issues found</div>')
       : '')
+      + '</div>'
+      + '<div class="feedback-panel" id="feedback-panel-' + i + '">'
+      +   '<div style="font-size:.82rem;color:#a78bfa;font-weight:700;margin-bottom:6px;font-family:system-ui,sans-serif;">EDITORIAL FEEDBACK — describe what needs fixing</div>'
+      +   '<textarea id="feedback-text-' + i + '" rows="4" placeholder="Be specific: what sections are wrong, what data is missing, what should be removed..." style="width:100%;background:#0c1220;color:#e2e8f0;border:1px solid #2d3e55;border-radius:7px;padding:8px 10px;font-size:.85rem;font-family:system-ui,sans-serif;resize:vertical;margin-bottom:8px;"></textarea>'
+      +   '<div style="display:flex;gap:6px;align-items:center;">'
+      +     '<button class="btn btn-primary sm" id="reprocess-btn-' + i + '" onclick="reprocessWithFeedback(' + i + ')">Reprocess Article</button>'
+      +     '<button class="btn btn-ghost sm" onclick="toggleFeedback(' + i + ')">Cancel</button>'
+      +     '<span id="reprocess-status-' + i + '" style="font-size:.77rem;font-family:system-ui,sans-serif;color:#94a3b8;"></span>'
+      +   '</div>'
       + '</div>'
       + '</div>';
     list.appendChild(card);
@@ -2832,6 +2942,112 @@ function toggleSeo(i) {
 function toggleQc(i) {
   var el = document.getElementById('qc-panel-' + i);
   if (el) el.classList.toggle('open');
+}
+
+function toggleFeedback(i) {
+  var el = document.getElementById('feedback-panel-' + i);
+  if (el) el.classList.toggle('open');
+}
+
+function reprocessWithFeedback(idx) {
+  var g = S.generated[idx];
+  if (!g) return;
+  var textarea = document.getElementById('feedback-text-' + idx);
+  var feedback = textarea ? textarea.value.trim() : '';
+  if (!feedback) { alert('Please describe what needs fixing.'); return; }
+
+  var btn = document.getElementById('reprocess-btn-' + idx);
+  var status = document.getElementById('reprocess-status-' + idx);
+  if (btn) { btn.disabled = true; btn.textContent = 'Reprocessing...'; }
+  if (status) status.textContent = 'Running full pipeline...';
+
+  // Save feedback to memory so future articles learn from it
+  saveFeedbackEntry({
+    category: g.spec.category || '',
+    typeId: g.spec.typeId || '',
+    sport: ACTIVE_SPORT,
+    feedback: feedback,
+    qcIssues: (g.qc && g.qc.issues) ? g.qc.issues.slice(0, 5) : [],
+    timestamp: Date.now()
+  });
+  addLog('Feedback saved to memory — reprocessing article...', 'ok');
+
+  var context = g.matchContext || '';
+  var spec = g.spec;
+  var articleLength = g.articleLength || 'standard';
+  var baseTokens = getTokenLimit();
+
+  // Rewrite prompt includes original article + editor feedback
+  var rewritePrompt = 'REWRITE this article based on the editorial feedback below.\n\n'
+    + '=== EDITORIAL FEEDBACK ===\n' + feedback + '\n\n'
+    + '=== SOURCE/RESEARCH CONTEXT ===\n' + (context || '(none)').slice(0, 3000) + '\n\n'
+    + '=== CURRENT ARTICLE ===\n' + (g.wp || '').replace(/<script[\s\S]*?<\/script>/g, '').replace(/<!--[\s\S]*?-->/g, '').slice(0, 5000) + '\n\n'
+    + 'Address EVERY point in the editorial feedback. Keep the article structure but fix all issues raised.\n'
+    + 'If the feedback says a section has no data, REMOVE that section entirely.\n'
+    + 'Output ONLY the corrected inner HTML content.';
+
+  callLLM(getSystemPrompt(), rewritePrompt, baseTokens)
+    .then(function(draft) {
+      draft = cleanMarkdown(draft);
+      if (status) status.textContent = 'Hallucination scan...';
+      return delay(1500).then(function() {
+        return hallucinationScan(draft, context, '');
+      }).then(function(scan) {
+        if (scan.hallucinations_found && scan.items && scan.items.length) {
+          addLog('Reprocess: hallucinations removed (' + scan.items.length + ')', 'err');
+          draft = cleanMarkdown(stripHallucinations(draft, scan));
+        }
+        return draft;
+      });
+    })
+    .then(function(draft) {
+      if (status) status.textContent = 'QC check...';
+      return delay(1500).then(function() {
+        return qualityCheck(spec, draft, context);
+      }).then(function(qc) {
+        return retryUntilPass(spec, draft, context, qc, 3);
+      });
+    })
+    .then(function(retry) {
+      if (status) status.textContent = 'E-E-A-T polish...';
+      return delay(1500).then(function() {
+        return eeatPolish(spec, retry.body, context);
+      }).then(function(polished) {
+        return { body: cleanMarkdown(polished.trim()), qc: retry.qc, wasRewritten: true, needsReview: retry.needsReview };
+      }).catch(function() {
+        return { body: retry.body, qc: retry.qc, wasRewritten: true, needsReview: retry.needsReview };
+      });
+    })
+    .then(function(result) {
+      if (status) status.textContent = 'SEO fields...';
+      return delay(1500).then(function() {
+        return genSeoFields(spec, result.body);
+      }).then(function(seo) {
+        return { body: result.body, qc: result.qc, seo: seo, wasRewritten: true, needsReview: result.needsReview };
+      });
+    })
+    .then(function(result) {
+      spec.title = result.seo.h1 || spec.title;
+      var wp = buildWpBlock(spec, result.body, result.seo);
+      // Update article IN PLACE
+      S.generated[idx] = {
+        spec: spec, wp: wp, seo: result.seo, status: 'done',
+        articleLength: articleLength, qc: result.qc,
+        needsReview: result.needsReview || (result.qc && result.qc.verdict === 'FAIL'),
+        wasRewritten: true, eeatPolished: true,
+        matchContext: (context || '').slice(0, 3000),
+        feedbackHistory: (g.feedbackHistory || []).concat([{ text: feedback, timestamp: Date.now() }]),
+        savedAt: Date.now(), wlOptions: g.wlOptions
+      };
+      saveArticles();
+      addLog('Article reprocessed with editorial feedback', 'ok');
+      renderGenList();
+    })
+    .catch(function(e) {
+      addLog('Reprocess failed: ' + e.message, 'err');
+      if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + e.message + '</span>';
+      if (btn) { btn.disabled = false; btn.textContent = 'Reprocess Article'; }
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -3206,8 +3422,9 @@ function generateFromCustom() {
     S.generated.push({
       spec: spec, wp: wp, seo: result.seo, status: 'done',
       articleLength: articleLength, qc: result.qc,
-      needsReview: hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
+      needsReview: result.needsRetryReview || hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
       wasRewritten: result.wasRewritten || false, eeatPolished: true,
+      matchContext: (result.matchContext || '').slice(0, 3000),
       savedAt: Date.now(), wlOptions: CURRENT_WL
     });
     saveArticles();
@@ -3290,19 +3507,10 @@ function generateFromCustom() {
         });
       })
       .then(function(r) {
-        var body = r.draft;
-        if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
-          return rewriteWithFixes(spec, body, r.matchContext, r.qc)
-            .then(function(fb) {
-              return delay(1500).then(function() {
-                return qualityCheck(spec, fb.trim(), r.matchContext);
-              }).then(function(qc2) {
-                return { body: fb.trim(), qc: qc2, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: true };
-              });
-            })
-            .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false }; });
-        }
-        return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false };
+        return retryUntilPass(spec, r.draft, r.matchContext || '', r.qc, 3)
+          .then(function(retry) {
+            return { body: retry.body, qc: retry.qc, seo: r.seo, matchContext: r.matchContext || '', hadHallucinations: r.hadHallucinations || false, wasRewritten: retry.wasRewritten, needsRetryReview: retry.needsReview };
+          });
       })
       .then(function(r) {
         showPipeline(pipelineEl, 'eeat');
@@ -3332,13 +3540,10 @@ function generateFromCustom() {
       ]).then(function(r) { return { draft: draft, qc: r[0], seo: r[1] }; });
     })
     .then(function(r) {
-      var body = r.draft;
-      if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
-        return rewriteWithFixes(spec, body, desc || '', r.qc)
-          .then(function(fb) { return { body: fb.trim(), qc: r.qc, seo: r.seo, wasRewritten: true }; })
-          .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false }; });
-      }
-      return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false };
+      return retryUntilPass(spec, r.draft, desc || '', r.qc, 3)
+        .then(function(retry) {
+          return { body: retry.body, qc: retry.qc, seo: r.seo, wasRewritten: retry.wasRewritten, needsRetryReview: retry.needsReview };
+        });
     })
     .then(function(r) {
       showPipeline(pipelineEl, 'eeat');
