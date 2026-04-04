@@ -531,15 +531,25 @@
         <span class="card-title">Custom Topic</span>
         <span class="pill pill-evergreen">Your Idea</span>
       </div>
-      <div class="card-desc">Write about any topic — provide a title and description and the generator will create a unique article.</div>
+      <div class="card-desc">Write about any topic — select a category and club to get an expert journalist prompt, or write your own brief.</div>
       <div class="ctrl-row" style="margin-bottom:10px;">
         <input type="text" id="custom-title" class="text-input" placeholder="Article title or headline..." style="flex:1;max-width:none;" />
       </div>
-      <textarea id="custom-desc" placeholder="Describe what the article should cover, key points, angle..." rows="3" style="margin-bottom:10px;"></textarea>
+      <!-- Club/team row — shown only when Football is selected (moved above textarea so club selection drives template) -->
+      <div class="ctrl-row" id="custom-club-row" style="display:none;margin-bottom:6px;align-items:center;gap:10px;">
+        <div class="ctrl" style="flex:1;min-width:220px;">
+          <label>Club / Team</label>
+          <select id="custom-club" onchange="fillCategoryTemplate()" style="max-width:none;width:100%;"></select>
+        </div>
+        <div style="align-self:flex-end;padding:6px 10px;background:#0a1f10;border:1px solid #166534;border-radius:7px;font-size:.77rem;color:#86efac;font-family:system-ui,sans-serif;white-space:nowrap;">
+          &#9889; Match Preview &amp; Match Report trigger deep Perplexity research + stats
+        </div>
+      </div>
+      <textarea id="custom-desc" placeholder="Select a category above for an expert journalist prompt, or describe your angle here..." rows="7" style="margin-bottom:10px;" oninput="this.removeAttribute('data-auto-filled')"></textarea>
       <div class="ctrl-row" style="margin-bottom:10px;">
         <div class="ctrl">
           <label>Category</label>
-          <select id="custom-cat"></select>
+          <select id="custom-cat" onchange="fillCategoryTemplate()"></select>
         </div>
         <div class="ctrl">
           <label>Sport</label>
@@ -551,16 +561,6 @@
             PDF/DOCX/TXT
           </div>
           <input type="file" id="custom-file-input" accept=".pdf,.docx,.txt,.md,.html" style="display:none" onchange="handleFileUpload(this,'custom')" />
-        </div>
-      </div>
-      <!-- Club/team row — shown only when Football is selected -->
-      <div class="ctrl-row" id="custom-club-row" style="display:none;margin-bottom:10px;align-items:center;gap:10px;">
-        <div class="ctrl" style="flex:1;min-width:220px;">
-          <label>Club / Team</label>
-          <select id="custom-club" style="max-width:none;width:100%;"></select>
-        </div>
-        <div style="align-self:flex-end;padding:6px 10px;background:#0a1f10;border:1px solid #166534;border-radius:7px;font-size:.77rem;color:#86efac;font-family:system-ui,sans-serif;white-space:nowrap;">
-          &#9889; Match Preview &amp; Match Report trigger deep Perplexity research + stats
         </div>
       </div>
       <!-- URL context row — shown when Football is selected -->
@@ -3286,6 +3286,8 @@ function updateCustomCats() {
   if (clubRow) clubRow.style.display = isFootball ? 'flex' : 'none';
   if (urlRow) urlRow.style.display = isFootball ? 'flex' : 'none';
   if (isFootball) rebuildCustomClubDropdown();
+  // Pre-fill template for the newly selected category
+  fillCategoryTemplate();
 }
 
 function rebuildCustomClubDropdown() {
@@ -3309,6 +3311,293 @@ function rebuildCustomClubDropdown() {
     sel.appendChild(grp);
   });
   if (prev) sel.value = prev;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CATEGORY TEMPLATES  (Editor + Football Expert + Writer + QC)
+// ═══════════════════════════════════════════════════════════════
+var FOOTBALL_TEMPLATES = {
+
+'Match Previews':
+'[CLUB] vs [OPPONENT] — Match Preview\n\n'
++ 'FIXTURE DETAILS\n'
++ 'Confirm: date, kick-off time (GMT/BST), venue (home or away), competition (league/cup/European stage, round). State the current league position of both clubs and what is at stake in this game.\n\n'
++ 'CURRENT FORM — [CLUB]\n'
++ 'Last 5 results with scores, opponents, home/away, and competitions. Highlight any winning or losing streak. How many goals scored and conceded in that run? Clean sheets? Key players contributing to form?\n\n'
++ 'CURRENT FORM — [OPPONENT]\n'
++ 'Same depth as above. Are they in-form or struggling? Any dangerous run of results that makes them hard to beat?\n\n'
++ 'HEAD-TO-HEAD RECORD\n'
++ 'Last 5 meetings between these sides — results, scorelines, venues. Any historic patterns (e.g. one side always wins at home)? Memorable encounters worth referencing? Any psychological edge?\n\n'
++ 'TEAM NEWS — [CLUB]\n'
++ 'Confirmed injuries with expected return timelines. Suspensions. Players returning from absence. How does the manager deal with these absences tactically? Expected formation and likely XI.\n\n'
++ 'TEAM NEWS — [OPPONENT]\n'
++ 'Same depth. Do their absences open opportunities for [CLUB]? Any key threat that might be missing?\n\n'
++ 'TACTICAL BATTLE\n'
++ 'Identify at least two specific matchups that will decide this game: e.g. [Club winger] vs [Opponent full-back]; set-piece threat vs weakness at corners; midfield press vs slow build-up. Explain why each matters tactically.\n\n'
++ 'KEY PLAYERS TO WATCH\n'
++ 'One standout from each side. Include their form, stats this season, and why they could be decisive. What does the opposition need to do to stop them?\n\n'
++ 'BETTING ODDS AND PREDICTION\n'
++ 'Current odds for home win / draw / away win. Flag any value bets (both teams to score, over 2.5 goals, first goalscorer). Give a reasoned scoreline prediction with 2–3 sentences of justification based on form, H2H, and team news.\n\n'
++ 'HOW TO WATCH\n'
++ 'UK TV channel (check live-footballontv.com for confirmed broadcast). Kick-off time. Streaming options (Sky Go, Now TV, Amazon Prime, iPlayer, ITVX). Radio coverage if available.',
+
+'Match Reports':
+'[CLUB] [SCORE] [OPPONENT] — Match Report\n\n'
++ 'OPENING — THE STORY IN ONE PARAGRAPH\n'
++ 'Open with the defining moment of the match — the decisive goal, the red card, the comeback, the VAR controversy. Set the scene immediately. Do not just state the score — tell us what this result means.\n\n'
++ 'MATCH TIMELINE — KEY EVENTS\n'
++ 'Every goal: scorer, exact minute, how it was created (corner, through ball, individual skill), assist. Every red card: player, minute, incident, impact on the game. Any penalties: who won it, who scored/missed, minute. VAR decisions: what was reviewed, what the outcome was.\n\n'
++ 'FIRST HALF ANALYSIS\n'
++ 'Who controlled the opening 45 minutes? Which team pressed higher? What was the tactical shape of each side? How did the goal(s) arrive — from sustained pressure, a set piece, a mistake, a counter-attack? Was the half-time scoreline fair?\n\n'
++ 'SECOND HALF ANALYSIS\n'
++ 'Did the tactical picture change? Which substitutions were made and did they affect the game? Was there a period of sustained pressure from either side? How did the closing stages develop — did anyone hang on, did anyone push for a winner?\n\n'
++ 'PLAYER RATINGS — [CLUB]\n'
++ 'Rate every starter 1–10 with a one-line justification. Be specific — reference actual contributions (e.g. "6 key passes, won 4 aerial duels" or "lost possession 11 times"). Name the Man of the Match and explain why. Do not give everyone 7.\n\n'
++ 'MATCH STATISTICS\n'
++ 'Possession %, shots on target vs total, xG for both teams, corners, fouls committed, yellow cards, red cards. Source from WhoScored, BBC Sport, or Sky Sports where available.\n\n'
++ 'MANAGER REACTIONS\n'
++ 'Direct post-match quotes from both managers (attributed, exact words). What was their explanation of the result? Any frustration, satisfaction, or concern expressed? If quotes are not available, note this.\n\n'
++ 'WHAT THIS RESULT MEANS\n'
++ 'Updated league position and points total for both clubs. Implications for title race, European places, relegation battle, or cup progression. What does the next fixture look like in light of this result?',
+
+'Season Analysis':
+'[CLUB] — Season Analysis [MONTH] [YEAR]\n\n'
++ 'OVERVIEW\n'
++ 'Current league position, points total, goal difference, games played, and games remaining. Is this above, below, or exactly where the club expected to be at this stage of the season? What was the target at the start of the campaign?\n\n'
++ 'FORM GUIDE\n'
++ 'Last 10 league results: W/D/L with scores. Home record vs away record (points, goals, clean sheets). Is there a pattern — strong at home but leaking away? Winning early then fading? Pick out any run of form (e.g. one win in eight) that has defined the campaign.\n\n'
++ 'ATTACKING PERFORMANCE\n'
++ 'Goals scored in all competitions. Top scorer with goals and assists. Total xG for vs actual goals — are they over- or under-performing? Big chances created vs converted. Set-piece goals as a proportion of total — is this a threat or a missed opportunity?\n\n'
++ 'DEFENSIVE RECORD\n'
++ 'Goals conceded, clean sheets, xG against. Is the defence a genuine strength or vulnerability? Where do the goals come from — open play, set pieces, individual errors? Which opponent has caused them the most trouble?\n\n'
++ 'KEY PLAYERS — THREE WHO HAVE DEFINED THE CAMPAIGN\n'
++ 'For each: stats, form, role in the system, and why they have been so important. Have any exceeded or fallen below expectations?\n\n'
++ 'DISAPPOINTMENTS\n'
++ 'One or two honest assessments of what has not worked — a signing that has underperformed, a tactical problem that keeps recurring, a position that has lacked quality, a sequence of results that cost them.\n\n'
++ 'MANAGER ASSESSMENT\n'
++ 'Tactical approach, best results, worst results, press conference tone. Has the manager made the right calls? Any major decisions — signings, formations, dropping players — that have defined their tenure this season?\n\n'
++ 'REMAINING FIXTURES\n'
++ 'How difficult is the run-in? Any fixture clusters or congestion? Point target to achieve seasonal objective. Realistic outcome assessment.\n\n'
++ 'VERDICT\n'
++ 'One honest paragraph: where this season sits in the club\'s recent history, what has been learned, and what needs to change.',
+
+'Transfer News':
+'[CLUB] Transfer News — [PLAYER] Links — [MONTH] [YEAR]\n\n'
++ 'THE HEADLINE\n'
++ 'State the story clearly: who is the player, what is their current club, which club is linked, and in what capacity (permanent transfer, loan, pre-contract, release clause triggered). When did the reports emerge and who first reported them?\n\n'
++ 'PLAYER PROFILE\n'
++ 'Age, position, dominant foot, nationality. Playing style in 2–3 sentences: are they a deep-lying playmaker, a high-pressing forward, a ball-playing centre-back? Key strengths and what they bring that is distinctive. Career clubs and any notable loan spells.\n\n'
++ 'THIS SEASON\'S STATISTICS\n'
++ 'Goals, assists, key passes, dribbles completed, defensive actions (if applicable), average match rating. How does this compare to their career average? Are they in the best form of their career or going through a difficult patch?\n\n'
++ 'TACTICAL FIT\n'
++ 'How would this player fit into [CLUB]\'s current system? Which position specifically? Who would they displace, compete with, or complement? Does the manager\'s style suit what this player does best?\n\n'
++ 'FEE, CONTRACT AND FINANCES\n'
++ 'Reported fee or release clause amount. Contract length being offered. How does this compare to the club\'s recent transfer record? Is this within their financial means or a significant stretch? Wages if reported.\n\n'
++ 'COMPETITION FOR THE PLAYER\n'
++ 'Other clubs linked. What is the player\'s preference? Any public statements from the player or their representatives? Who is the favourite to land them?\n\n'
++ 'LIKELIHOOD AND TIMELINE\n'
++ 'How reliable is the source? Is a deal imminent or at an early stage? Any obstacles — club holding out for more, player uncertain, work permit issues? When might a decision be expected?\n\n'
++ 'VERDICT\n'
++ 'Would this be good business? What does it give [CLUB] they currently lack? What is the risk?',
+
+'Injury Updates':
+'[CLUB] Injury News — [MONTH] [YEAR]\n\n'
++ 'CURRENT INJURY LIST\n'
++ 'Full list of players currently unavailable: player name, injury type (muscle tear, ligament, fracture, knock), how the injury occurred, and the expected return date or timeline ("6–8 weeks", "before end of the season", "day-to-day"). Mark each as Definite Out / Doubt / Monitoring.\n\n'
++ 'MOST SIGNIFICANT ABSENCE\n'
++ 'Focus on the highest-impact injury to [CLUB]\'s prospects. What does losing this player cost them statistically and tactically? How have results differed with and without them this season? Provide specific comparison data.\n\n'
++ 'TACTICAL CONSEQUENCES\n'
++ 'How has the manager reorganised to cover these absences? Has a change of formation been forced? Has a young player been given a chance? Is someone playing out of position? Has the style of play changed as a result?\n\n'
++ 'COVER OPTIONS\n'
++ 'Who is stepping into the injured player\'s role? Is it a like-for-like replacement or a compromise? How have those deputies performed? Is the squad deep enough to absorb these losses without results suffering?\n\n'
++ 'RETURNING PLAYERS\n'
++ 'Anyone due back soon? Have any players been rushed back before? Any setbacks to note from players who returned early? Who would make the biggest difference when fit again?\n\n'
++ 'NEXT THREE FIXTURES — INJURY IMPACT\n'
++ 'Go fixture by fixture: which absences hurt most against this particular opponent? Where will the team be most exposed? Are there any match-ups where the injury list gives the opponent a clear advantage?\n\n'
++ 'MANAGER\'S WORDS\n'
++ 'Any recent press conference quotes on the injury situation. What has the manager said about timelines and selection?\n\n'
++ 'PROGNOSIS\n'
++ 'Realistic outlook over the next month. Will they have a full squad available soon, or is this an ongoing concern that threatens their seasonal objectives?',
+
+'Competition Guides':
+'[COMPETITION NAME] — [YEAR/YEAR+1] Guide\n\n'
++ 'WHAT IS THIS COMPETITION?\n'
++ 'Format and structure: how many teams, how they qualify, group stage or straight knockout, legs (one or two), away goals rule (if applicable). What is the prize for winning — trophy, prize money, qualification for a higher competition?\n\n'
++ 'THE FAVOURITES\n'
++ 'Top three or four realistic contenders with a paragraph on each: current squad quality, manager pedigree, form in this competition historically, why they are considered a genuine threat. Include relevant statistics.\n\n'
++ 'DARK HORSES\n'
++ 'One or two teams who could outperform expectations. What makes them dangerous at this level despite lower billing? Any tactical quirks, underrated players, or momentum from a strong domestic season?\n\n'
++ 'BRITISH AND IRISH CLUBS — WHERE DO THEY STAND?\n'
++ 'How are English, Scottish, Welsh, or Irish clubs involved? What are their realistic prospects? Recent history for British clubs in this competition.\n\n'
++ 'PLAYERS TO WATCH\n'
++ 'Three individual players who could define this competition. Stats, form, why they thrive in knockout or pan-European environments. Include at least one less obvious pick.\n\n'
++ 'KEY DATES\n'
++ 'Full schedule: group stage deadlines (if applicable), last-32/last-16 dates, quarter-finals, semi-finals, final date and venue. Any fixture clashes worth noting?\n\n'
++ 'HOW TO WATCH IN THE UK\n'
++ 'Which channels hold the rights? What matches are shown live? Any free-to-air coverage? Streaming options and costs.\n\n'
++ 'HISTORICAL CONTEXT\n'
++ 'Who has won this competition in the last five editions? Any dominant team or dynasty? Most goals in a campaign, most titles. Any record worth noting.',
+
+'Broadcaster Guides':
+'How to Watch [COMPETITION / CLUB / EVENT] in the UK — [YEAR]\n\n'
++ 'WHAT IS BEING COVERED\n'
++ 'Identify precisely what this guide is for: a specific competition, a club\'s matches across all competitions, an international tournament, or an event. State the season/dates it runs and the total number of matches involved.\n\n'
++ 'BROADCAST RIGHTS — WHO SHOWS WHAT\n'
++ 'For each broadcaster (Sky Sports, TNT Sports/Discovery+, Amazon Prime Video, BBC, ITV, Channel 4, DAZN): which matches or rounds do they show? How many games per round? Are any matches exclusive? Are any shared between broadcasters?\n\n'
++ 'HOW TO WATCH LIVE — STEP BY STEP\n'
++ 'Channel numbers and names on Sky (SD and HD), Virgin, BT TV, Freesat, Freeview where applicable. How to find the match schedule. Any dedicated apps or on-demand services.\n\n'
++ 'STREAMING OPTIONS AND COSTS\n'
++ 'For each platform: Sky Go (included with Sky subscription), Now TV Sky Sports Pass (day pass cost, monthly cost), Amazon Prime (included with Prime, price), Discovery+ (cost, if relevant), ITVX/iPlayer (free). Which devices are supported?\n\n'
++ 'FREE-TO-AIR MATCHES\n'
++ 'Flag clearly any matches available on BBC, ITV, Channel 4, or ITV4 at no cost. These are the most important for fans without pay TV subscriptions.\n\n'
++ 'HIGHLIGHTS AND CATCH-UP\n'
++ 'When and where are highlights shown? Match of the Day, Sky Sports News, YouTube channels, broadcaster apps. How quickly after the final whistle?\n\n'
++ 'RADIO COVERAGE\n'
++ 'BBC Radio 5 Live and talkSPORT rights. Which matches they cover live. Online streaming of radio commentary.\n\n'
++ 'BEST VALUE FOR A FOOTBALL FAN\n'
++ 'What is the cheapest route to watch the maximum number of matches? Rank the options and be transparent about total cost per month.',
+
+'Team Guides':
+'[CLUB] — Complete Club Guide [YEAR]\n\n'
++ 'CLUB IDENTITY AND HISTORY\n'
++ 'Founded, location, traditional colours, nickname. Brief history: when were the best years, what trophies have they won, what is the defining era fans remember? Rivalries — who is the main local or historic rival and why does it matter?\n\n'
++ 'THE MANAGER\n'
++ 'Full name, nationality, how long in charge. Playing career (if relevant). Managerial style: formation preference, pressing intensity, how they develop young players, how they handle the dressing room. Their record at this club: games, wins, losses, biggest wins and worst defeats.\n\n'
++ 'CURRENT SQUAD — KEY PLAYERS\n'
++ 'Cover all positions: goalkeeper, defence, midfield, attack. For each area, name the first-choice player(s) and one key backup. Include one standout stat per player. Highlight any academy graduate who has broken through this season.\n\n'
++ 'TACTICAL SYSTEM\n'
++ 'Preferred formation. How do they play in possession — patient build-up, direct, or counter-attack focused? Out of possession: high press, mid-block, or low block? Set-piece threat: are they dangerous from dead balls or vulnerable to them?\n\n'
++ 'STRENGTHS THIS SEASON\n'
++ 'Three specific things that have worked well with stats to back each one up. Not vague praise — specific and evidenced.\n\n'
++ 'WEAKNESSES THIS SEASON\n'
++ 'Three honest areas where they have struggled or been found out. Include any patterns — same scorelines, same types of goals conceded, same formation problems.\n\n'
++ 'HOME GROUND\n'
++ 'Stadium name, capacity, how long they have been there, renovation history if relevant. Atmosphere rating and home record this season. Any specific fan rituals or pre-match traditions.\n\n'
++ 'SEASON OBJECTIVES AND VERDICT\n'
++ 'Stated or realistic aims: promotion, survival, top half, a cup run. Are they on track? Honest assessment of the season and what success looks like.',
+
+'Manager Features':
+'[MANAGER NAME] — Football Management Feature\n\n'
++ 'THE OPENING HOOK\n'
++ 'Start with a moment that defines this manager — a tactical masterstroke, a famous dressing-room turnaround, a promotion party, a public controversy. Use it to immediately establish who this person is.\n\n'
++ 'CAREER TRAJECTORY\n'
++ 'Playing career overview (be brief unless it is directly relevant). First managerial post: what was the club, what was the challenge, what did they achieve? The key stepping-stone clubs that shaped their approach. Any setbacks or sackings — and how they responded. What brought them to their current role?\n\n'
++ 'TACTICAL PHILOSOPHY\n'
++ 'What does a [Manager] team look like in possession and out of it? Preferred formation and why. Press or sit deep? Specific tactical traits they have taken from club to club (e.g. always plays a high line, always uses inverted wingers, always presses in the final third). Has their style evolved? Any specific influence — a mentor, a playing style they admired?\n\n'
++ 'GREATEST ACHIEVEMENTS\n'
++ 'Trophies, promotions, keeping clubs up against the odds. Best season. Best individual result. Any record win or remarkable run of form under their management.\n\n'
++ 'THE CURRENT JOB\n'
++ 'How long at this club. What they inherited — squad quality, morale, finances. What they have built. Where the club is now versus when they arrived. How the fanbase views them.\n\n'
++ 'WORKING METHODS\n'
++ 'Training ground reputation — demanding or man-management focused? Known for developing players or buying proven talent? Any famous training methods, routines, or sayings? Relationship with the media: open, combative, guarded?\n\n'
++ 'CONTROVERSIES AND DIFFICULT PERIODS\n'
++ 'Be balanced but honest. Any public disputes with players, boards, or media? Any tactical failures that cost them? How do they handle pressure? Do they handle adversity well?\n\n'
++ 'WHAT COMES NEXT\n'
++ 'Is their job secure? Any speculation about a bigger role? What do they need to achieve to cement a strong legacy here?',
+
+'Player Features':
+'[PLAYER NAME] — Football Player Feature\n\n'
++ 'THE OPENING\n'
++ 'Introduce this player with a single moment or stat that captures who they are — a goal they scored, a game they dominated, a statistic that stands out. Give the reader a reason to care immediately.\n\n'
++ 'PLAYER PROFILE\n'
++ 'Full name, age, nationality, dominant foot, position, current club and shirt number. Physical profile: height, build, and how that affects their game. Playing style in a clear paragraph — not clichés, but specific: what do they do that others at their level cannot?\n\n'
++ 'THE CAREER JOURNEY\n'
++ 'Academy background. Breakthrough moment. Any loans that shaped them. The transfer(s) that changed their career. Any setbacks — injury, loss of form, being frozen out — and how they recovered. Is there a turning point that made them the player they are today?\n\n'
++ 'TECHNICAL STRENGTHS\n'
++ 'At least three specific abilities with evidence: "finishes from outside the box — 6 goals from range this season", "wins 74% of aerial duels", "averages 4.3 successful dribbles per 90 minutes". Use WhoScored or FBRef-style stats where possible. What does a coach gain by having this player?\n\n'
++ 'WEAKNESSES — BE HONEST\n'
++ 'No player is complete. Where do opposing managers set up to exploit them? Is there a position or type of game where they disappear? A defensive contribution that is lacking? A set-piece responsibility they avoid?\n\n'
++ 'THIS SEASON IN NUMBERS\n'
++ 'Goals, assists, key passes, chances created, progressive carries — whichever metrics fit the position. How does this compare to last season? Are they at their peak or still improving?\n\n'
++ 'SYSTEM AND TEAMMATES\n'
++ 'How do they fit the current manager\'s system? Who brings out the best in them — a creative midfield partner, a striker who makes the runs? How would they adapt if they moved to a different club?\n\n'
++ 'CONTRACT AND FUTURE\n'
++ 'Current contract expiry. Any reported interest from other clubs. Could they play at a higher level? International situation and potential.\n\n'
++ 'VERDICT\n'
++ 'Why is this player worth watching right now? One paragraph that makes the case — not hyperbole, but a specific, reasoned argument.',
+
+'Club News':
+'[CLUB] — Club News: [HEADLINE TOPIC]\n\n'
++ 'THE STORY — WHAT HAS HAPPENED\n'
++ 'State the facts precisely: what has occurred, who is involved, when it happened, and where. Do not bury the lead. The most significant element goes first.\n\n'
++ 'BACKGROUND AND CONTEXT\n'
++ 'Why did this happen? What were the circumstances that led to this development? Has anything similar happened at this club before? Any recent history (last 12 months) that readers need to understand the significance?\n\n'
++ 'THE CLUB\'S POSITION\n'
++ 'Has the club made an official statement? Quote directly if so. If no statement has been made, note this and explain what the silence might suggest. What is the club\'s likely next step?\n\n'
++ 'STAKEHOLDER REACTION\n'
++ 'Fan response: what are supporters saying? Any notable reactions from pundits, former players, or the football media? Any player or manager comments? Be specific — not "fans are angry" but who said what and where.\n\n'
++ 'IMPLICATIONS FOR THE TEAM\n'
++ 'What does this mean on the pitch? Does it change selection, morale, or squad planning? Is there a financial dimension? How does it affect this season\'s objectives?\n\n'
++ 'WHAT HAPPENS NEXT\n'
++ 'Timeline: any upcoming decisions, deadlines, or announcements? What are the possible outcomes? What does a good resolution look like for the club?',
+
+'Awards':
+'[AWARD NAME] — [MONTH] [YEAR] — Nominees and Verdict\n\n'
++ 'THE AWARD\n'
++ 'What is this award, who presents it, and what does it recognise — best performance over the month, the season, a single game? Who votes for it (managers, captains, journalists, public)? What is the history and prestige? When is it announced?\n\n'
++ 'THE NOMINEES — ONE PARAGRAPH EACH\n'
++ 'For each nominee: name, club, position. What they did in the award period — goals, assists, key performances, standout games. Specific stats. Why they deserve to win. Be equally rigorous for each — no lazy write-ups for non-favourites.\n\n'
++ 'THE CASE FOR THE FRONTRUNNER\n'
++ 'Who is the odds-on favourite and why? Statistical argument backed by at least three specific data points. Why the voting panel is likely to favour them.\n\n'
++ 'THE DARK HORSE\n'
++ 'Is there a nominee who could spring a surprise? What is the argument for them? Have voters tended to surprise in previous editions of this award?\n\n'
++ 'HISTORICAL CONTEXT\n'
++ 'Who has won this award in the last three to five editions? Is there a dominant club, nationality, or position that tends to be recognised? Any notable snubs from past years?\n\n'
++ 'VERDICT — WHO SHOULD WIN AND WHO WILL WIN\n'
++ 'These can be different and often are. Make both arguments clearly. Explain any gap between what is deserved and what will likely happen.',
+
+'Fan Features':
+'[CLUB] — Fan Feature: [TOPIC / ANGLE]\n\n'
++ 'THE HUMAN HOOK\n'
++ 'Do not open with a statistic or a league table. Open with a moment, a memory, a feeling, or a voice. Fan features succeed when they transport the reader to the terraces, the living room, the pub, the drive to the ground. Start there.\n\n'
++ 'THE COMMUNITY AND CULTURE\n'
++ 'What makes this club\'s fanbase distinctive? Is it a historic working-class community? A rural market town that punches above its weight? A multicultural city side? What rituals, chants, or traditions set matchday apart from any other ground in the country?\n\n'
++ 'THE MOMENT OR THEME — IN DETAIL\n'
++ 'Whether this is about a famous game, a promotion, a relegation, a stadium move, or a long-awaited trophy — describe it with specific, vivid detail. What did it look, sound, and feel like? If possible, include a perspective from someone who was there — a supporter\'s account or a well-documented fan story brings authenticity.\n\n'
++ 'THE HISTORICAL CONNECTION\n'
++ 'How does the past shape how supporters feel today? What do older fans remember that younger ones have only heard about? What is the one game or one player that every supporter of this club knows, regardless of when they started watching?\n\n'
++ 'THE WIDER PICTURE\n'
++ 'What does this club or this fanbase represent beyond results? Community ties, regional identity, economic shifts in the area, the impact of modern football\'s commercialisation on the relationship between fans and the club. Keep this grounded — not a lecture, but an observation rooted in the club\'s specific reality.\n\n'
++ 'THE SIGN-OFF\n'
++ 'End with something that captures the emotional core of supporting this club. Not manufactured sentiment — something earned by the paragraphs that came before it. What is the feeling that keeps people coming back, week after week, regardless of the result?',
+
+'Fixture Analysis':
+'[CLUB] — Next Four Fixtures Analysis — [MONTH] [YEAR]\n\n'
++ 'FIXTURE OVERVIEW TABLE\n'
++ 'Present the four upcoming fixtures clearly: opponent, date, home/away, competition, kick-off time, and a difficulty rating out of 5 (with 5 being hardest). Explain the rating criteria briefly.\n\n'
++ 'FIXTURE 1 — [OPPONENT] [DATE] — [HOME/AWAY]\n'
++ 'Opponent\'s current form (last 5), league position, and key threats. How does [CLUB]\'s style match up against them tactically? Who are the danger players? What does [CLUB] need to do to win? Realistic outcome and prediction.\n\n'
++ 'FIXTURE 2 — [OPPONENT] [DATE] — [HOME/AWAY]\n'
++ 'Same depth as Fixture 1. Note any fixture congestion (e.g. midweek game following a weekend one) and whether rotation is likely. Who might be rested?\n\n'
++ 'FIXTURE 3 — [OPPONENT] [DATE] — [HOME/AWAY]\n'
++ 'Same structure. Highlight any additional context — cup tie, local derby, relegation six-pointer, promotion decider. What is the emotional and competitive weight of this game?\n\n'
++ 'FIXTURE 4 — [OPPONENT] [DATE] — [HOME/AWAY]\n'
++ 'Same structure. By this stage: will the squad be fatigued? Does [CLUB] have the depth to maintain form over four games in quick succession?\n\n'
++ 'INJURY AND SUSPENSION WATCH\n'
++ 'Which current absentees might return during this run? Any players on yellow card warnings who are one booking away from suspension? How does the injury picture change the realistic assessment of each fixture?\n\n'
++ 'POINTS TARGET\n'
++ 'What would constitute a strong return from these four games — in context of the club\'s season objectives? What is the minimum acceptable? What would full points mean for their position?\n\n'
++ 'OVERALL VERDICT\n'
++ 'Is this a favourable run that could launch a significant push, or a brutal schedule that risks derailing the season? One clear, honest paragraph with a predicted points haul and reasoning.'
+
+}; // end FOOTBALL_TEMPLATES
+
+// Fill the description textarea with the appropriate expert template
+function fillCategoryTemplate() {
+  var sportId = document.getElementById('custom-sport') ? document.getElementById('custom-sport').value : ACTIVE_SPORT;
+  if (sportId !== 'football') return; // templates only for football currently
+  var cat = document.getElementById('custom-cat');
+  var desc = document.getElementById('custom-desc');
+  if (!cat || !desc) return;
+  var template = FOOTBALL_TEMPLATES[cat.value];
+  if (!template) return;
+  // Only inject if textarea is empty or was previously auto-filled (not manually edited)
+  if (desc.value === '' || desc.getAttribute('data-auto-filled') === 'true') {
+    var club = document.getElementById('custom-club');
+    var clubName = (club && club.value) ? club.value : '[CLUB]';
+    desc.value = template.replace(/\[CLUB\]/g, clubName);
+    desc.setAttribute('data-auto-filled', 'true');
+  }
 }
 
 // Fetch a URL pasted into the Custom Topic URL field and store as context
