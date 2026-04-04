@@ -1037,7 +1037,7 @@ function buildBannerHtml(b) {
 }
 
 // Helper: use a free model for non-critical work
-var FREE_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+var FREE_MODEL = 'google/gemini-2.5-flash';
 function callFreeLLM(systemPrompt, userPrompt, maxTokens) {
   maxTokens = maxTokens || 1500;
   return withTimeout(apiPost({
