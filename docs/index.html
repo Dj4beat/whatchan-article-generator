@@ -720,6 +720,14 @@ var MODELS = [
 ];
 var ACTIVE_MODEL = MODELS[0].id;
 
+function getModelLabel(modelId) {
+  for (var i = 0; i < MODELS.length; i++) {
+    if (MODELS[i].id === modelId) return MODELS[i].label.replace(/\s*[\u26A1\u2728]?\s*$/, '');
+  }
+  // Fallback: extract readable name from model ID (e.g. "google/gemini-2.5-flash" → "gemini-2.5-flash")
+  return modelId ? modelId.split('/').pop() : 'Unknown';
+}
+
 function setModel(modelId) {
   ACTIVE_MODEL = modelId;
   document.getElementById('model-select').value = modelId;
@@ -1384,27 +1392,51 @@ function loadFeedbackMemory() {
   } catch(e) { return []; }
 }
 
-function buildFeedbackLessons() {
+function buildFeedbackLessons(currentModel) {
   var items = loadFeedbackMemory();
   if (!items.length) return '';
-  // Group by category, deduplicate feedback text, cap at 1500 chars
+
+  // Separate into direct (same model) and shared (different model)
+  var directLines = [];
+  var sharedLines = [];
   var seen = {};
-  var lines = [];
+
   items.forEach(function(e) {
     var key = (e.feedback || '').slice(0, 100);
     if (seen[key]) return;
     seen[key] = true;
-    var label = (e.category || '') + (e.typeId ? ' (' + e.typeId + ')' : '');
-    lines.push('- [' + label + '] ' + (e.feedback || '').slice(0, 200));
-    // Also include top QC issues if available
+
+    var catLabel = (e.category || '') + (e.typeId ? ' (' + e.typeId + ')' : '');
+    var feedbackText = (e.feedback || '').slice(0, 200);
+    var issueText = '';
     if (e.qcIssues && e.qcIssues.length) {
-      e.qcIssues.slice(0, 2).forEach(function(iss) {
-        lines.push('  Issue: [' + (iss.severity || '') + '] ' + (iss.description || '').slice(0, 150));
-      });
+      issueText = e.qcIssues.slice(0, 2).map(function(iss) {
+        return '\n  Issue: [' + (iss.severity || '') + '] ' + (iss.description || '').slice(0, 150);
+      }).join('');
+    }
+
+    var isDirect = currentModel && e.model && e.model === currentModel;
+    var sourceLabel = e.model ? getModelLabel(e.model) : 'unknown model';
+
+    if (isDirect) {
+      // Direct feedback — harshest framing
+      directLines.push('- YOUR DIRECT FEEDBACK [' + catLabel + ']: ' + feedbackText + issueText);
+    } else {
+      // Shared knowledge — advisory but still important
+      directLines.length; // force reference
+      sharedLines.push('- SHARED KNOWLEDGE (from ' + sourceLabel + ') [' + catLabel + ']: ' + feedbackText + issueText);
     }
   });
-  var result = lines.join('\n').slice(0, 1500);
-  return result;
+
+  var parts = [];
+  if (directLines.length) {
+    parts.push('DIRECT FEEDBACK FOR YOU (you made these mistakes before — repeating them is a critical failure):\n' + directLines.join('\n'));
+  }
+  if (sharedLines.length) {
+    parts.push('SHARED KNOWLEDGE (other models made these mistakes — learn from them, repeating a known mistake after being warned is worse than the original error):\n' + sharedLines.join('\n'));
+  }
+
+  return parts.join('\n\n').slice(0, 2000);
 }
 
 function getWlOptions() {
@@ -1840,8 +1872,8 @@ function getSystemPrompt() {
     + '- No DOCTYPE, html, head, body, style, or script tags\n'
     + '- ABSOLUTELY NO MARKDOWN — output pure HTML only. Use <strong> not **, use <em> not *, use <h2> not ##. If you output any markdown syntax the article is broken.';
 
-  // Inject accumulated editorial feedback as lessons the writer must follow
-  var lessons = buildFeedbackLessons();
+  // Inject model-aware editorial feedback as lessons the writer must follow
+  var lessons = buildFeedbackLessons(ACTIVE_MODEL);
   if (lessons) {
     p += '\n\nEDITORIAL LESSONS LEARNED (from past editorial feedback — avoid these mistakes in this article):\n' + lessons;
   }
@@ -1895,8 +1927,8 @@ function getQcSystem() {
     + '}\n\n'
     + 'VERDICT: Any critical issue = FAIL. 2+ major = FAIL. Otherwise PASS.';
 
-  // Inject accumulated editorial feedback — QC is EXTRA STRICT on repeat issues
-  var lessons = buildFeedbackLessons();
+  // Inject model-aware editorial feedback — QC is EXTRA STRICT on repeat issues
+  var lessons = buildFeedbackLessons(ACTIVE_MODEL);
   if (lessons) {
     p += '\n\nHISTORICAL EDITORIAL FEEDBACK — be EXTRA STRICT on these patterns. If ANY of the following appear in the article, it is an AUTOMATIC FAIL:\n' + lessons;
   }
@@ -2332,6 +2364,7 @@ function retryUntilPass(spec, draft, context, firstQcResult, maxAttempts) {
           category: spec.category || '',
           typeId: spec.typeId || '',
           sport: ACTIVE_SPORT,
+          model: ACTIVE_MODEL,
           feedback: 'AUTO: QC failed after ' + maxAttempts + ' attempts. Issues: ' + allIssues.slice(0, 5).map(function(i) { return i.description; }).join('; '),
           qcIssues: allIssues.slice(0, 10),
           timestamp: Date.now()
@@ -2602,7 +2635,7 @@ function runArticlePipeline(opts) {
         spec: spec, wp: wp, seo: result.seo, status: 'done',
         articleLength: articleLength, qc: result.qc,
         wasRewritten: result.wasRewritten, eeatPolished: true,
-        needsReview: result.needsReview, savedAt: Date.now(), wlOptions: CURRENT_WL
+        needsReview: result.needsReview, model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
       });
       saveArticles();
       document.getElementById('gen-count').textContent = S.generated.length;
@@ -2779,7 +2812,7 @@ function runEgGenerate() {
           needsReview: result.needsRetryReview || result.hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
           matchContext: (result.matchContext || '').slice(0, 3000),
           wasRewritten: result.wasRewritten || false, eeatPolished: true,
-          savedAt: Date.now(), wlOptions: CURRENT_WL
+          model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
         });
         saveArticles();
         document.getElementById('gen-count').textContent = S.generated.length;
@@ -2833,6 +2866,7 @@ function renderGenList() {
       +     srcBadge
       +     '<span class="pill-cat" style="background:#1e2d3d;color:#64748b;border:1px solid #263354">' + (g.articleLength || 'standard') + '</span>'
       +     (g.wlOptions ? '<span class="pill-cat" style="background:#0c1a2e;color:#7dd3fc;border:1px solid #1e3a5f;">White Label</span>' : '')
+      +     (g.model ? '<span class="pill-cat" style="background:#1a1a2e;color:#a78bfa;border:1px solid #4c1d95;">' + escHtml(getModelLabel(g.model)) + '</span>' : '')
       +   '</div>'
       +   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + reviewBadge + qcBadge + eatBadge + rewriteBadge + '</div>'
       + '</div>'
@@ -2966,6 +3000,7 @@ function reprocessWithFeedback(idx) {
     category: g.spec.category || '',
     typeId: g.spec.typeId || '',
     sport: ACTIVE_SPORT,
+    model: g.model || ACTIVE_MODEL,
     feedback: feedback,
     qcIssues: (g.qc && g.qc.issues) ? g.qc.issues.slice(0, 5) : [],
     timestamp: Date.now()
@@ -3037,7 +3072,7 @@ function reprocessWithFeedback(idx) {
         wasRewritten: true, eeatPolished: true,
         matchContext: (context || '').slice(0, 3000),
         feedbackHistory: (g.feedbackHistory || []).concat([{ text: feedback, timestamp: Date.now() }]),
-        savedAt: Date.now(), wlOptions: g.wlOptions
+        model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: g.wlOptions
       };
       saveArticles();
       addLog('Article reprocessed with editorial feedback', 'ok');
@@ -3425,7 +3460,7 @@ function generateFromCustom() {
       needsReview: result.needsRetryReview || hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
       wasRewritten: result.wasRewritten || false, eeatPolished: true,
       matchContext: (result.matchContext || '').slice(0, 3000),
-      savedAt: Date.now(), wlOptions: CURRENT_WL
+      model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
     });
     saveArticles();
     document.getElementById('gen-count').textContent = S.generated.length;
