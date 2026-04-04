@@ -652,6 +652,9 @@ var MODELS = [
   // ── DeepSeek ──
   { id: 'deepseek/deepseek-chat-v3-0324',           label: 'DeepSeek V3',                       free: false, costIn: 0.00027, costOut: 0.0011  },
   { id: 'deepseek/deepseek-r1',                     label: 'DeepSeek R1 (Reasoning)',           free: false, costIn: 0.0004,  costOut: 0.0016  },
+  // ── Perplexity (live web search) ──
+  { id: 'perplexity/sonar',                         label: 'Perplexity Sonar (Web Search)',     free: false, costIn: 0.001,   costOut: 0.001   },
+  { id: 'perplexity/sonar-pro',                     label: 'Perplexity Sonar Pro (Web Search)', free: false, costIn: 0.003,   costOut: 0.015   },
 ];
 var ACTIVE_MODEL = MODELS[0].id;
 
@@ -1054,7 +1057,50 @@ function buildBannerHtml(b) {
 }
 
 // Helper: use a free model for non-critical work
-var FREE_MODEL = 'google/gemini-2.5-flash';
+var FREE_MODEL     = 'google/gemini-2.5-flash';
+var RESEARCH_MODEL = 'perplexity/sonar-pro'; // live web search — used for pre-research verification
+
+// Call any specific model (used for research and second-opinion QC)
+function callModel(modelId, systemPrompt, userPrompt, maxTokens) {
+  maxTokens = maxTokens || 1000;
+  return withTimeout(apiPost({
+    model: modelId,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    max_tokens: maxTokens
+  }).then(function(d) {
+    if (d.choices && d.choices[0] && d.choices[0].message) return d.choices[0].message.content;
+    throw new Error('Unexpected response format from ' + modelId);
+  }), 60000, 'callModel:' + modelId);
+}
+
+// Pre-research: use Perplexity (live web) to verify current facts before writing
+function preResearch(title, sourceText) {
+  var sport = SPORTS[ACTIVE_SPORT].label;
+  var prompt = 'You are verifying current ' + sport + ' facts for an article.\n\n'
+    + 'Article headline: ' + title + '\n\n'
+    + 'Source text (may be limited):\n' + (sourceText || '').slice(0, 1500) + '\n\n'
+    + 'Using current web sources, verify ONLY these time-sensitive facts for the people and teams mentioned:\n'
+    + '1. Current manager/head coach of each team mentioned (full confirmed name)\n'
+    + '2. Current club of each player mentioned (still there? recent transfer?)\n'
+    + '3. Current playing status (injured, suspended, on loan, etc.)\n'
+    + '4. Any result mentioned — confirm exact score\n'
+    + '5. Current league/standings position of teams mentioned\n\n'
+    + 'List ONLY facts you can confirm from current web sources. If uncertain, exclude.\n'
+    + 'Start your response with: "VERIFIED CURRENT FACTS (web-checked):"';
+
+  return callModel(
+    RESEARCH_MODEL,
+    'You are a sports fact-checker. Use web search to verify current information. Be concise and precise. Only state facts you can confirm.',
+    prompt, 800
+  ).catch(function(e) {
+    addLog('Web research unavailable: ' + e.message, 'warn');
+    return '';
+  });
+}
+
 function callFreeLLM(systemPrompt, userPrompt, maxTokens) {
   maxTokens = maxTokens || 1500;
   return withTimeout(apiPost({
@@ -1980,104 +2026,147 @@ function runArticlePipeline(opts) {
 
   addLog('Starting pipeline: ' + spec.title);
 
-  // Step 1: Analyse source
-  showPipeline(pipe, 'analyse');
-  addLog('Step 1/4: Analysing source article...');
+  // ── Step 0: Web research — verify current facts before writing ──
+  showPipeline(pipe, 'research');
+  addLog('Step 1/6: Verifying current facts via web search...');
 
-  var analysePrompt = 'Analyse this source article and extract key facts:\n\n'
-    + '=== SOURCE ===\n' + opts.sourceText.slice(0, 4000) + '\n=== END ===\n\n'
-    + 'Extract: (1) key facts and events, (2) names/managers/players with roles, (3) stats, (4) direct quotes, (5) main angle.';
+  preResearch(spec.title, opts.sourceText)
+    .then(function(verifiedFacts) {
+      if (verifiedFacts) addLog('Web verification complete', 'ok');
 
-  // Analysis uses free model — grunt work
-  callFreeLLM('You are a ' + SPORTS[ACTIVE_SPORT].label.toLowerCase() + ' news analyst. Extract facts thoroughly.', analysePrompt, 1500)
-    .then(function(analysis) {
-      // Step 2: Write article (delay to avoid rate limits)
-      showPipeline(pipe, 'write');
-      addLog('Step 2/4: Writing unique article...', 'ok');
-      var newsContext = analysis;
-      var writePrompt = buildPrompt(spec, newsContext, articleLength, opts.extraContext);
-      writePrompt += '\nNOTE: "' + opts.title + '" is the SOURCE headline. Create your OWN unique H1 with a different angle.';
-      return delay(2000).then(function() {
-        return callLLM(getSystemPrompt(), writePrompt, baseTokens);
-      }).then(function(draft) {
-        return { draft: cleanMarkdown(draft), newsContext: newsContext };
+      // Combine verified facts with any uploaded trusted context
+      var fullTrustedContext = (verifiedFacts ? verifiedFacts + '\n\n' : '')
+        + (opts.extraContext ? 'EDITOR UPLOADS (trusted):\n' + opts.extraContext : '');
+
+      // ── Step 1: Analyse source ──
+      showPipeline(pipe, 'analyse');
+      addLog('Step 2/6: Analysing source article...');
+
+      var analysePrompt = 'Analyse this source article and extract key facts:\n\n'
+        + '=== SOURCE ===\n' + opts.sourceText.slice(0, 4000) + '\n=== END ===\n\n'
+        + (verifiedFacts ? '=== WEB-VERIFIED FACTS (authoritative) ===\n' + verifiedFacts + '\n=== END ===\n\n' : '')
+        + 'Extract: (1) key facts and events, (2) names/managers/players with confirmed roles, (3) stats, (4) direct quotes, (5) main angle.\n'
+        + 'Mark any fact from the WEB-VERIFIED section as [VERIFIED].';
+
+      return delay(1500).then(function() {
+        return callFreeLLM(
+          'You are a ' + SPORTS[ACTIVE_SPORT].label.toLowerCase() + ' news analyst. Extract facts thoroughly. Prioritise web-verified facts over source text when they conflict.',
+          analysePrompt, 1500
+        );
+      }).then(function(analysis) {
+        return { analysis: analysis, verifiedFacts: verifiedFacts, fullTrustedContext: fullTrustedContext };
       });
     })
     .then(function(r) {
-      // Step 2b: Hallucination scan — run silently before QC
+      // ── Step 2: Write article ──
+      showPipeline(pipe, 'write');
+      addLog('Step 3/6: Writing article...', 'ok');
+      var newsContext = r.analysis;
+      var writePrompt = buildPrompt(spec, newsContext, articleLength, r.fullTrustedContext);
+      writePrompt += '\nNOTE: "' + opts.title + '" is the SOURCE headline. Create your OWN unique H1 with a different angle.';
+      if (r.verifiedFacts) {
+        writePrompt += '\n\nWEB-VERIFIED FACTS — use these as authoritative ground truth for any time-sensitive claims:\n' + r.verifiedFacts;
+      }
+      return delay(2000).then(function() {
+        return callLLM(getSystemPrompt(), writePrompt, baseTokens);
+      }).then(function(draft) {
+        return { draft: cleanMarkdown(draft), newsContext: newsContext, verifiedFacts: r.verifiedFacts, fullTrustedContext: r.fullTrustedContext };
+      });
+    })
+    .then(function(r) {
+      // ── Step 2b: Hallucination scan (compares against source + verified facts) ──
       addLog('Scanning for hallucinations...');
       return delay(1500).then(function() {
-        return hallucinationScan(r.draft, opts.sourceText, opts.extraContext);
+        return hallucinationScan(r.draft, opts.sourceText, r.fullTrustedContext);
       }).then(function(scan) {
         var draft = r.draft;
+        var hadHallucinations = false;
         if (scan.hallucinations_found && scan.items && scan.items.length) {
           addLog('Hallucinations detected (' + scan.items.length + ') — removing...', 'err');
           draft = stripHallucinations(draft, scan);
           draft = cleanMarkdown(draft);
+          hadHallucinations = true;
         } else {
           addLog('Hallucination scan: clean', 'ok');
         }
-        return { draft: draft, newsContext: r.newsContext };
+        return { draft: draft, newsContext: r.newsContext, verifiedFacts: r.verifiedFacts, fullTrustedContext: r.fullTrustedContext, hadHallucinations: hadHallucinations };
       }).catch(function() {
-        return { draft: r.draft, newsContext: r.newsContext };
+        return { draft: r.draft, newsContext: r.newsContext, verifiedFacts: r.verifiedFacts, fullTrustedContext: r.fullTrustedContext, hadHallucinations: false };
       });
     })
     .then(function(r) {
-      // Step 3: QC then SEO (sequential to avoid rate limits)
+      // ── Step 3: QC then SEO ──
       showPipeline(pipe, 'qc');
-      addLog('Step 3/4: Quality check + SEO fields...', 'ok');
+      addLog('Step 4/6: Quality check + SEO...', 'ok');
+      var qcContext = r.newsContext + (r.verifiedFacts ? '\n\nWEB-VERIFIED:\n' + r.verifiedFacts : '');
       return delay(2000).then(function() {
-        return qualityCheck(spec, r.draft, r.newsContext);
+        return qualityCheck(spec, r.draft, qcContext);
       }).then(function(qc) {
         return delay(2000).then(function() {
           return genSeoFields(spec);
         }).then(function(seo) {
-          return { draft: r.draft, newsContext: r.newsContext, qc: qc, seo: seo };
+          return { draft: r.draft, newsContext: r.newsContext, verifiedFacts: r.verifiedFacts, qc: qc, seo: seo, hadHallucinations: r.hadHallucinations };
         });
       });
     })
     .then(function(r) {
-      // If QC fails, rewrite
-      var body = r.draft;
-      var qcPromise;
+      // ── Step 3b: Mandatory rewrite if QC fails, then second QC pass ──
+      var needsReview = r.hadHallucinations;
       if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
-        addLog('QC flagged issues — rewriting...');
-        qcPromise = rewriteWithFixes(spec, body, r.newsContext, r.qc).then(function(fb) {
-          return { body: fb.trim(), wasRewritten: true };
-        }).catch(function() {
-          return { body: body.trim(), wasRewritten: false };
-        });
-      } else {
-        qcPromise = Promise.resolve({ body: body.trim(), wasRewritten: false });
+        var criticalCount = r.qc.issues.filter(function(i){ return i.severity === 'critical'; }).length;
+        addLog('QC FAIL — ' + criticalCount + ' critical issue(s). Rewriting...', 'err');
+        needsReview = true;
+        return rewriteWithFixes(spec, r.draft, r.newsContext + (r.verifiedFacts ? '\n\nWEB-VERIFIED:\n' + r.verifiedFacts : ''), r.qc)
+          .then(function(rewritten) {
+            var fixed = cleanMarkdown(rewritten.trim());
+            // Second QC pass on the rewrite
+            addLog('Running second QC pass on rewrite...');
+            return delay(2000).then(function() {
+              return qualityCheck(spec, fixed, r.newsContext + (r.verifiedFacts ? '\n\nWEB-VERIFIED:\n' + r.verifiedFacts : ''));
+            }).then(function(qc2) {
+              var stillFailing = qc2.verdict === 'FAIL';
+              if (stillFailing) {
+                addLog('Second QC: issues remain — flagging for review', 'err');
+                needsReview = true;
+              } else {
+                addLog('Second QC: passed', 'ok');
+              }
+              return { body: fixed, newsContext: r.newsContext, qc: qc2, seo: r.seo, wasRewritten: true, needsReview: needsReview };
+            });
+          }).catch(function() {
+            return { body: r.draft, newsContext: r.newsContext, qc: r.qc, seo: r.seo, wasRewritten: false, needsReview: true };
+          });
       }
-      return qcPromise.then(function(fix) {
-        return { body: fix.body, newsContext: r.newsContext, qc: r.qc, seo: r.seo, wasRewritten: fix.wasRewritten };
-      });
+      return { body: r.draft, newsContext: r.newsContext, qc: r.qc, seo: r.seo, wasRewritten: false, needsReview: needsReview };
     })
     .then(function(r) {
-      // Step 4: E-E-A-T Polish (delay to avoid rate limits)
+      // ── Step 4: E-E-A-T Polish ──
       showPipeline(pipe, 'eeat');
-      addLog('Step 4/4: E-E-A-T polish...', 'ok');
+      addLog('Step 5/6: E-E-A-T polish...', 'ok');
       return delay(2000).then(function() {
         return eeatPolish(spec, r.body, r.newsContext);
       }).then(function(polished) {
-        return { body: cleanMarkdown(polished.trim()), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
+        return { body: cleanMarkdown(polished.trim()), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten, needsReview: r.needsReview };
       }).catch(function() {
-        // If EEAT fails, use unpolished version
-        return { body: cleanMarkdown(r.body), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
+        return { body: cleanMarkdown(r.body), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten, needsReview: r.needsReview };
       });
     })
     .then(function(result) {
       showPipeline(pipe, 'done');
       spec.title = result.seo.h1 || spec.title;
       var wp = buildWpBlock(spec, result.body, result.seo);
+      if (result.needsReview) {
+        addLog('Article complete — REVIEW RECOMMENDED before publishing', 'err');
+      } else {
+        addLog('Step 6/6: Article complete', 'ok');
+      }
       S.generated.push({
         spec: spec, wp: wp, seo: result.seo, status: 'done',
         articleLength: articleLength, qc: result.qc,
-        wasRewritten: result.wasRewritten, eeatPolished: true
+        wasRewritten: result.wasRewritten, eeatPolished: true,
+        needsReview: result.needsReview
       });
       document.getElementById('gen-count').textContent = S.generated.length;
-      addLog('Article complete: ' + spec.title, 'ok');
       renderGenList();
     })
     .catch(function(e) {
@@ -2091,12 +2180,13 @@ function runArticlePipeline(opts) {
 
 function showPipeline(el, step) {
   var steps = [
-    { id: 'fetch', label: 'Fetch' },
-    { id: 'analyse', label: 'Analyse' },
-    { id: 'write', label: 'Write' },
-    { id: 'qc', label: 'QC' },
-    { id: 'eeat', label: 'E-E-A-T' },
-    { id: 'done', label: 'Done' }
+    { id: 'fetch',    label: 'Fetch' },
+    { id: 'research', label: 'Verify' },
+    { id: 'analyse',  label: 'Analyse' },
+    { id: 'write',    label: 'Write' },
+    { id: 'qc',       label: 'QC' },
+    { id: 'eeat',     label: 'E-E-A-T' },
+    { id: 'done',     label: 'Done' }
   ];
   var reachedActive = false;
   el.innerHTML = steps.map(function(s, i) {
@@ -2219,6 +2309,9 @@ function renderGenList() {
       : '<span class="gen-status-err">QC FAIL</span>') : '';
     var eatBadge = g.eeatPolished ? '<span class="gen-status-ok">E-E-A-T</span>' : '';
     var rewriteBadge = g.wasRewritten ? '<span class="gen-status-ok" style="color:#fbbf24;">Rewritten</span>' : '';
+    var reviewBadge = g.needsReview
+      ? '<span class="gen-status-err" style="background:#7c1d1d;border:1px solid #dc2626;padding:2px 8px;border-radius:4px;font-weight:700;">&#9888; REVIEW BEFORE PUBLISHING</span>'
+      : '<span class="gen-status-ok" style="background:#14532d;border:1px solid #16a34a;padding:2px 8px;border-radius:4px;">&#10003; Web-Verified</span>';
 
     var card = document.createElement('div');
     card.className = 'gen-card' + (S.previewIdx === i ? ' prev' : '');
@@ -2230,7 +2323,7 @@ function renderGenList() {
       +     srcBadge
       +     '<span class="pill-cat" style="background:#1e2d3d;color:#64748b;border:1px solid #263354">' + (g.articleLength || 'standard') + '</span>'
       +   '</div>'
-      +   '<div style="display:flex;gap:6px;">' + qcBadge + eatBadge + rewriteBadge + '</div>'
+      +   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + reviewBadge + qcBadge + eatBadge + rewriteBadge + '</div>'
       + '</div>'
       + '<div class="gen-title">' + escHtml(g.seo ? g.seo.h1 : g.spec.title) + '</div>'
       + '<div class="gen-meta">' + g.spec.category + ' &middot; ' + TODAY_STR + '</div>'
