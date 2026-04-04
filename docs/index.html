@@ -628,14 +628,30 @@ var WC_TOKEN  = 'wc-9f2k4p8m';  // must match WC_SECRET worker secret
 //  MODELS (OpenRouter)
 // ═══════════════════════════════════════════════════════════════
 var MODELS = [
-  { id: 'google/gemini-2.5-flash',                  label: 'Gemini 2.5 Flash (Cheap)',           free: false, costIn: 0.00015, costOut: 0.0006  },
-  { id: 'google/gemini-2.5-pro-preview-03-25',     label: 'Gemini 2.5 Pro',                     free: false, costIn: 0.00125, costOut: 0.01    },
-  { id: 'openai/gpt-4o-mini',                       label: 'GPT-4o Mini',                        free: false, costIn: 0.00015, costOut: 0.0006  },
-  { id: 'openai/gpt-4o',                            label: 'GPT-4o',                             free: false, costIn: 0.0025,  costOut: 0.01    },
-  { id: 'anthropic/claude-sonnet-4',                label: 'Claude Sonnet 4',                    free: false, costIn: 0.003,   costOut: 0.015   },
-  { id: 'anthropic/claude-opus-4',                  label: 'Claude Opus 4',                      free: false, costIn: 0.015,   costOut: 0.075   },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free',   label: 'Llama 3.3 70B (Free*)',              free: true,  costIn: 0,       costOut: 0       },
-  { id: 'deepseek/deepseek-chat-v3-0324:free',     label: 'DeepSeek V3 (Free*)',                free: true,  costIn: 0,       costOut: 0       },
+  // ── Google ──
+  { id: 'google/gemini-2.5-flash',                  label: 'Gemini 2.5 Flash ⚡',               free: false, costIn: 0.00015, costOut: 0.0006  },
+  { id: 'google/gemini-2.5-pro-preview-03-25',      label: 'Gemini 2.5 Pro',                    free: false, costIn: 0.00125, costOut: 0.01    },
+  // ── OpenAI ──
+  { id: 'openai/gpt-4.1-mini',                      label: 'GPT-4.1 Mini',                      free: false, costIn: 0.0004,  costOut: 0.0016  },
+  { id: 'openai/gpt-4.1',                           label: 'GPT-4.1',                           free: false, costIn: 0.002,   costOut: 0.008   },
+  { id: 'openai/gpt-4o',                            label: 'GPT-4o',                            free: false, costIn: 0.0025,  costOut: 0.01    },
+  { id: 'openai/o3-mini',                           label: 'OpenAI o3-mini (Reasoning)',        free: false, costIn: 0.0011,  costOut: 0.0044  },
+  // ── Anthropic ──
+  { id: 'anthropic/claude-haiku-4-5',               label: 'Claude Haiku 4.5',                  free: false, costIn: 0.0008,  costOut: 0.004   },
+  { id: 'anthropic/claude-sonnet-4',                label: 'Claude Sonnet 4',                   free: false, costIn: 0.003,   costOut: 0.015   },
+  { id: 'anthropic/claude-opus-4',                  label: 'Claude Opus 4',                     free: false, costIn: 0.015,   costOut: 0.075   },
+  // ── Mistral ──
+  { id: 'mistralai/mistral-small-3.1-24b-instruct', label: 'Mistral Small 3.1',                 free: false, costIn: 0.0001,  costOut: 0.0003  },
+  { id: 'mistralai/mistral-large-2411',             label: 'Mistral Large',                     free: false, costIn: 0.002,   costOut: 0.006   },
+  // ── xAI ──
+  { id: 'x-ai/grok-3-mini-beta',                   label: 'Grok 3 Mini',                       free: false, costIn: 0.0003,  costOut: 0.0005  },
+  { id: 'x-ai/grok-3-beta',                        label: 'Grok 3',                            free: false, costIn: 0.003,   costOut: 0.015   },
+  // ── Meta ──
+  { id: 'meta-llama/llama-4-maverick',              label: 'Llama 4 Maverick',                  free: false, costIn: 0.0002,  costOut: 0.0006  },
+  { id: 'meta-llama/llama-4-scout',                 label: 'Llama 4 Scout',                     free: false, costIn: 0.00008, costOut: 0.0003  },
+  // ── DeepSeek ──
+  { id: 'deepseek/deepseek-chat-v3-0324',           label: 'DeepSeek V3',                       free: false, costIn: 0.00027, costOut: 0.0011  },
+  { id: 'deepseek/deepseek-r1',                     label: 'DeepSeek R1 (Reasoning)',           free: false, costIn: 0.0004,  costOut: 0.0016  },
 ];
 var ACTIVE_MODEL = MODELS[0].id;
 
