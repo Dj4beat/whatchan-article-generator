@@ -553,6 +553,16 @@
           <input type="file" id="custom-file-input" accept=".pdf,.docx,.txt,.md,.html" style="display:none" onchange="handleFileUpload(this,'custom')" />
         </div>
       </div>
+      <!-- Club/team row — shown only when Football is selected -->
+      <div class="ctrl-row" id="custom-club-row" style="display:none;margin-bottom:10px;align-items:center;gap:10px;">
+        <div class="ctrl" style="flex:1;min-width:220px;">
+          <label>Club / Team</label>
+          <select id="custom-club" style="max-width:none;width:100%;"></select>
+        </div>
+        <div style="align-self:flex-end;padding:6px 10px;background:#0a1f10;border:1px solid #166534;border-radius:7px;font-size:.77rem;color:#86efac;font-family:system-ui,sans-serif;white-space:nowrap;">
+          &#9889; Match Preview &amp; Match Report trigger deep Perplexity research + stats
+        </div>
+      </div>
       <button class="btn btn-primary" onclick="generateFromCustom()">Generate WhatChan Article</button>
       <div id="custom-pipeline" class="pipeline-bar" style="display:none;"></div>
     </div>
@@ -1138,6 +1148,88 @@ function preResearch(title, sourceText) {
     prompt, 800
   ).catch(function(e) {
     addLog('Web research unavailable: ' + e.message, 'warn');
+    return '';
+  });
+}
+
+// Deep research for match articles — uses Perplexity to find fixture/result data
+function preResearchMatch(team, typeId) {
+  var prompt;
+  if (typeId === 'preview') {
+    prompt = 'You are a sports journalist preparing a match preview.\n\n'
+      + 'TEAM: ' + team + '\n\n'
+      + 'Find and confirm ALL of the following using current web sources:\n'
+      + '1. NEXT MATCH: Exact opponent, date (day/month/year), kick-off time (GMT/BST), venue (home or away), competition name\n'
+      + '2. ' + team + ' FORM: Last 5 results — for each give: opponent, score, competition, home/away\n'
+      + '3. OPPONENT FORM: Last 5 results — same detail\n'
+      + '4. LEAGUE TABLE: Current position, points, goal difference for ' + team + ' and the opponent\n'
+      + '5. TEAM NEWS — ' + team + ': Confirmed injuries (player name, injury type, expected return), suspensions\n'
+      + '6. TEAM NEWS — Opponent: Same detail\n'
+      + '7. HEAD-TO-HEAD: Last 5 meetings between these sides — result, venue, competition, standout moments\n'
+      + '8. MANAGER — ' + team + ': Full name (confirmed, currently in post)\n'
+      + '9. MANAGER — Opponent: Full name (confirmed, currently in post)\n'
+      + '10. HOW TO WATCH: UK TV channel and/or streaming service, kick-off time\n\n'
+      + 'Start your response with: "MATCH PREVIEW RESEARCH — ' + team + ':"\n'
+      + 'Only include facts you can confirm from current web sources. No speculation.';
+  } else {
+    prompt = 'You are a sports journalist preparing a match report.\n\n'
+      + 'TEAM: ' + team + '\n\n'
+      + 'Find and confirm ALL of the following about ' + team + '\'s most recent completed match:\n'
+      + '1. MATCH DETAILS: Date, competition, venue, teams, final score\n'
+      + '2. GOALSCORERS: Every goal — scorer, exact minute, assist (if known) — for both sides\n'
+      + '3. MATCH STATS: Possession %, shots on target/total, xG (both teams), corners, yellow cards, red cards\n'
+      + '4. KEY MOMENTS: Red cards (player, minute), penalties (scored/missed), VAR decisions, significant injuries during the match\n'
+      + '5. MANAGER REACTION — ' + team + ': Direct post-match quotes (exact words, attributed)\n'
+      + '6. MANAGER REACTION — Opponent: Direct post-match quotes if available\n'
+      + '7. TABLE IMPACT: League position for both teams after this result, with points total\n'
+      + '8. MANAGER — ' + team + ': Full name (confirmed, currently in post)\n'
+      + '9. MANAGER — Opponent: Full name (confirmed, currently in post)\n'
+      + '10. PLAYER RATINGS: Any published ratings from BBC Sport, Sky Sports, or The Guardian\n\n'
+      + 'Start your response with: "MATCH REPORT RESEARCH — ' + team + ':"\n'
+      + 'Exact facts and figures only. No speculation or guessing.';
+  }
+
+  addLog('Researching ' + (typeId === 'preview' ? 'next fixture' : 'last match') + ' for ' + team + '...');
+  return callModel(
+    RESEARCH_MODEL,
+    'You are a sports fact-checker with live web access. Search current sources to find exact match data. Only state facts you can verify from current web pages.',
+    prompt, 1500
+  ).catch(function(e) {
+    addLog('Match research unavailable: ' + e.message, 'warn');
+    return '';
+  });
+}
+
+// Fetch additional stats from WhoScored / FootyStats via Perplexity
+function fetchMatchStats(team, typeId, researchContext) {
+  var contextSnippet = (researchContext || '').slice(0, 600);
+  var prompt;
+  if (typeId === 'review') {
+    prompt = 'CONTEXT (most recent ' + team + ' match):\n' + contextSnippet + '\n\n'
+      + 'Using WhoScored.com, FootyStats.org, or SoccerStats.com, find for this specific match:\n'
+      + '1. PLAYER RATINGS: Full ' + team + ' starting XI rated out of 10 (from WhoScored if available)\n'
+      + '2. DETAILED STATS: Progressive passes, PPDA, high press stats for ' + team + '\n'
+      + '3. INDIVIDUAL HIGHLIGHTS: Top 3 performers for ' + team + ' with specific stat justification\n'
+      + '4. SEASON CONTEXT: ' + team + '\'s season stats — goals, xG, clean sheets, average rating\n'
+      + '5. TACTICAL SHAPE: Formation used by ' + team + ' and opposition\n\n'
+      + 'Cite the source site for each stat. Start with: "MATCH STATISTICS DATA:"';
+  } else {
+    prompt = 'CONTEXT (' + team + ' next fixture):\n' + contextSnippet + '\n\n'
+      + 'Using WhoScored.com, FootyStats.org, or SoccerStats.com, find:\n'
+      + '1. ' + team + ' SEASON STATS: Goals scored/conceded, xG for/against, clean sheets, average rating\n'
+      + '2. OPPONENT SEASON STATS: Same metrics\n'
+      + '3. HOME/AWAY SPLITS: Both teams\' records at home and away this season\n'
+      + '4. TOP SCORERS: Leading scorer for each team with goal and assist tally\n'
+      + '5. H2H STATS: Average goals per game and both teams to score % from historical meetings\n\n'
+      + 'Cite the source site for each stat. Start with: "STATISTICAL CONTEXT:"';
+  }
+
+  return callModel(
+    RESEARCH_MODEL,
+    'You are a sports data analyst with live web access. Find accurate statistics from WhoScored, FootyStats, or SoccerStats. Only report verified numbers.',
+    prompt, 1200
+  ).catch(function(e) {
+    addLog('Stats research unavailable: ' + e.message, 'warn');
     return '';
   });
 }
@@ -2407,30 +2499,93 @@ function runEgGenerate() {
 
     var articleLength = S.articleLength;
     var baseTokens = getTokenLimit();
+    var isMatchArticle = (spec.typeId === 'preview' || spec.typeId === 'review') && spec.team;
 
-    // For evergreen, we use the model's knowledge (no source article)
-    var writePrompt = buildPrompt(spec, '', articleLength, '');
+    // Match articles: deep research first via Perplexity, then full pipeline with hallucination scan
+    // Evergreen articles: model knowledge only, lighter pipeline
+    var researchPromise;
+    if (isMatchArticle) {
+      addLog('[' + spec.team + '] Step 1/6: Researching ' + (spec.typeId === 'preview' ? 'next fixture' : 'last match') + '...');
+      researchPromise = preResearchMatch(spec.team, spec.typeId)
+        .then(function(research) {
+          if (research) addLog('[' + spec.team + '] Fixture research complete', 'ok');
+          return delay(2000).then(function() {
+            addLog('[' + spec.team + '] Step 2/6: Fetching match statistics...');
+            return fetchMatchStats(spec.team, spec.typeId, research || '');
+          }).then(function(stats) {
+            if (stats) addLog('[' + spec.team + '] Statistics complete', 'ok');
+            return [research, stats].filter(Boolean).join('\n\n---\n\n');
+          });
+        });
+    } else {
+      researchPromise = Promise.resolve('');
+    }
 
-    callLLM(getSystemPrompt(), writePrompt, baseTokens)
-      .then(function(draft) {
-        return Promise.all([
-          qualityCheck(spec, draft, ''),
-          genSeoFields(spec, draft)
-        ]).then(function(r) { return { draft: draft, qc: r[0], seo: r[1] }; });
+    researchPromise
+      .then(function(matchContext) {
+        var stepLabel = isMatchArticle ? 'Step 3/6' : 'Step 1/4';
+        addLog('[' + spec.team + '] ' + stepLabel + ': Writing article...');
+        var writePrompt = buildPrompt(spec, matchContext || '', articleLength, '');
+        if (matchContext) {
+          writePrompt += '\n\nCRITICAL: Use ONLY the research data above for all match-specific facts (scores, dates, fixtures, managers, player status). Do NOT use training knowledge for any time-sensitive claim.';
+        }
+        return delay(1500).then(function() {
+          return callLLM(getSystemPrompt(), writePrompt, baseTokens);
+        }).then(function(draft) {
+          return { draft: cleanMarkdown(draft), matchContext: matchContext };
+        });
+      })
+      .then(function(r) {
+        if (!isMatchArticle) return { draft: r.draft, matchContext: '', hadHallucinations: false };
+        addLog('[' + spec.team + '] Step 4/6: Hallucination scan...');
+        return delay(1500).then(function() {
+          return hallucinationScan(r.draft, r.matchContext, '');
+        }).then(function(scan) {
+          var draft = r.draft;
+          var hadHallucinations = false;
+          if (scan.hallucinations_found && scan.items && scan.items.length) {
+            addLog('[' + spec.team + '] Hallucinations removed (' + scan.items.length + ')', 'err');
+            draft = cleanMarkdown(stripHallucinations(draft, scan));
+            hadHallucinations = true;
+          } else {
+            addLog('[' + spec.team + '] Hallucination scan: clean', 'ok');
+          }
+          return { draft: draft, matchContext: r.matchContext, hadHallucinations: hadHallucinations };
+        });
+      })
+      .then(function(r) {
+        var stepLabel = isMatchArticle ? 'Step 5/6' : 'Step 2/4';
+        addLog('[' + spec.team + '] ' + stepLabel + ': QC + SEO...');
+        return delay(2000).then(function() {
+          return Promise.all([
+            qualityCheck(spec, r.draft, r.matchContext || ''),
+            genSeoFields(spec, r.draft)
+          ]).then(function(results) {
+            return { draft: r.draft, qc: results[0], seo: results[1], matchContext: r.matchContext || '', hadHallucinations: r.hadHallucinations || false };
+          });
+        });
       })
       .then(function(r) {
         var body = r.draft;
         if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
-          return rewriteWithFixes(spec, body, '', r.qc)
-            .then(function(fb) { return { body: fb.trim(), qc: r.qc, seo: r.seo, wasRewritten: true }; })
-            .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false }; });
+          return rewriteWithFixes(spec, body, r.matchContext || '', r.qc)
+            .then(function(fb) {
+              if (!isMatchArticle) return { body: fb.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: true };
+              return delay(1500).then(function() {
+                return qualityCheck(spec, fb.trim(), r.matchContext);
+              }).then(function(qc2) {
+                return { body: fb.trim(), qc: qc2, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: true };
+              });
+            })
+            .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false }; });
         }
-        return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false };
+        return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false };
       })
       .then(function(r) {
-        // E-E-A-T polish
-        return eeatPolish(spec, r.body, '')
-          .then(function(polished) { return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten }; })
+        var stepLabel = isMatchArticle ? 'Step 6/6' : 'Step 4/4';
+        addLog('[' + spec.team + '] ' + stepLabel + ': E-E-A-T polish...');
+        return eeatPolish(spec, r.body, r.matchContext || '')
+          .then(function(polished) { return { body: polished.trim(), qc: r.qc, seo: r.seo, hadHallucinations: r.hadHallucinations, wasRewritten: r.wasRewritten }; })
           .catch(function() { return r; });
       })
       .then(function(result) {
@@ -2439,6 +2594,7 @@ function runEgGenerate() {
         S.generated.push({
           spec: spec, wp: wp, seo: result.seo, status: 'done',
           articleLength: articleLength, qc: result.qc,
+          needsReview: result.hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
           wasRewritten: result.wasRewritten || false, eeatPolished: true,
           savedAt: Date.now(), wlOptions: CURRENT_WL
         });
@@ -2920,6 +3076,14 @@ function generateFromCustom() {
 
   var category = document.getElementById('custom-cat').value;
   var sportId = document.getElementById('custom-sport').value;
+  var clubEl = document.getElementById('custom-club');
+  var club = (clubEl && sportId === 'football' && clubEl.value) ? clubEl.value : '';
+  // Detect match article type from category + club selection
+  var matchTypeId = null;
+  if (club) {
+    if (category === 'Match Previews') matchTypeId = 'preview';
+    else if (category === 'Match Reports') matchTypeId = 'review';
+  }
   var extra = S.uploadedContext['custom'] ? S.uploadedContext['custom'].text : '';
   if (desc) extra = (extra ? extra + '\n\n' : '') + 'ARTICLE BRIEF: ' + desc;
 
@@ -2934,26 +3098,133 @@ function generateFromCustom() {
     SRC_LABELS = getSrcLabels();
   }
 
-  showPipeline(pipelineEl, 'write');
-  addLog('Custom topic: ' + title);
-
   var articleLength = S.articleLength;
   var baseTokens = getTokenLimit();
+  CURRENT_WL = getWlOptions();
+  S.generating = true;
 
   var spec = {
     slug: 'custom-' + TODAY_ISO + '-' + Math.random().toString(36).slice(2, 6),
     title: title,
     category: category,
-    keywords: [title.split(':')[0].trim(), category].filter(Boolean),
-    team: '',
-    typeId: 'custom',
+    keywords: [title.split(':')[0].trim(), category, club].filter(Boolean),
+    team: club || '',
+    typeId: matchTypeId || 'custom',
     isTopical: true,
     source: 'custom'
   };
 
+  // Shared finish + cleanup helpers used by both pipelines
+  function finish(result, hadHallucinations) {
+    showPipeline(pipelineEl, 'done');
+    spec.title = result.seo.h1 || spec.title;
+    var wp = buildWpBlock(spec, result.body, result.seo);
+    S.generated.push({
+      spec: spec, wp: wp, seo: result.seo, status: 'done',
+      articleLength: articleLength, qc: result.qc,
+      needsReview: hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
+      wasRewritten: result.wasRewritten || false, eeatPolished: true,
+      savedAt: Date.now(), wlOptions: CURRENT_WL
+    });
+    saveArticles();
+    document.getElementById('gen-count').textContent = S.generated.length;
+    addLog('Custom article complete: ' + spec.title, 'ok');
+    renderGenList();
+  }
+  function cleanup() {
+    S.generating = false;
+    if (prevSport !== sportId) { ACTIVE_SPORT = prevSport; SITE_URL = getSiteUrl(); SRC_LABELS = getSrcLabels(); }
+  }
+
+  // ── Match article pipeline (Match Preview / Match Report with a club selected) ──
+  if (matchTypeId && club) {
+    addLog('Match article: ' + club + ' — ' + category + (CURRENT_WL ? ' [White Label]' : ''));
+    showPipeline(pipelineEl, 'research');
+    addLog('Step 1/6: Researching ' + (matchTypeId === 'preview' ? 'next fixture' : 'last match') + ' for ' + club + '...');
+
+    preResearchMatch(club, matchTypeId)
+      .then(function(research) {
+        if (research) addLog('Research complete', 'ok');
+        showPipeline(pipelineEl, 'analyse');
+        addLog('Step 2/6: Fetching match statistics from stats sites...');
+        return delay(2000).then(function() {
+          return fetchMatchStats(club, matchTypeId, research || '');
+        }).then(function(stats) {
+          if (stats) addLog('Statistics complete', 'ok');
+          return [research, stats].filter(Boolean).join('\n\n---\n\n');
+        });
+      })
+      .then(function(matchContext) {
+        showPipeline(pipelineEl, 'write');
+        addLog('Step 3/6: Writing article from verified research...');
+        var writePrompt = buildPrompt(spec, matchContext || '', articleLength, extra);
+        if (matchContext) {
+          writePrompt += '\n\nCRITICAL: Use ONLY the research data above for all match-specific facts. '
+            + 'Never invent or assume scores, fixtures, managers, or player status from training knowledge.';
+        }
+        return delay(1500).then(function() {
+          return callLLM(getSystemPrompt(), writePrompt, baseTokens);
+        }).then(function(draft) { return { draft: cleanMarkdown(draft), matchContext: matchContext }; });
+      })
+      .then(function(r) {
+        addLog('Step 4/6: Hallucination scan...');
+        return delay(1500).then(function() {
+          return hallucinationScan(r.draft, r.matchContext, extra);
+        }).then(function(scan) {
+          var draft = r.draft;
+          var hadHallucinations = false;
+          if (scan.hallucinations_found && scan.items && scan.items.length) {
+            addLog('Hallucinations removed (' + scan.items.length + ')', 'err');
+            draft = cleanMarkdown(stripHallucinations(draft, scan));
+            hadHallucinations = true;
+          } else { addLog('Hallucination scan: clean', 'ok'); }
+          return { draft: draft, matchContext: r.matchContext, hadHallucinations: hadHallucinations };
+        });
+      })
+      .then(function(r) {
+        showPipeline(pipelineEl, 'qc');
+        addLog('Step 5/6: QC + SEO...');
+        return delay(2000).then(function() {
+          return Promise.all([
+            qualityCheck(spec, r.draft, r.matchContext),
+            genSeoFields(spec, r.draft)
+          ]).then(function(res) {
+            return { draft: r.draft, qc: res[0], seo: res[1], matchContext: r.matchContext, hadHallucinations: r.hadHallucinations };
+          });
+        });
+      })
+      .then(function(r) {
+        var body = r.draft;
+        if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
+          return rewriteWithFixes(spec, body, r.matchContext, r.qc)
+            .then(function(fb) {
+              return delay(1500).then(function() {
+                return qualityCheck(spec, fb.trim(), r.matchContext);
+              }).then(function(qc2) {
+                return { body: fb.trim(), qc: qc2, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: true };
+              });
+            })
+            .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false }; });
+        }
+        return { body: body.trim(), qc: r.qc, seo: r.seo, matchContext: r.matchContext, hadHallucinations: r.hadHallucinations, wasRewritten: false };
+      })
+      .then(function(r) {
+        showPipeline(pipelineEl, 'eeat');
+        addLog('Step 6/6: E-E-A-T polish...');
+        return eeatPolish(spec, r.body, r.matchContext)
+          .then(function(polished) { return { body: polished.trim(), qc: r.qc, seo: r.seo, hadHallucinations: r.hadHallucinations, wasRewritten: r.wasRewritten }; })
+          .catch(function() { return r; });
+      })
+      .then(function(result) { finish(result, result.hadHallucinations); })
+      .catch(function(e) { showPipeline(pipelineEl, 'error'); addLog('Match article failed: ' + e.message, 'err'); })
+      .finally(cleanup);
+    return; // skip standard pipeline below
+  }
+
+  // ── Standard custom topic pipeline (no match research) ──
+  showPipeline(pipelineEl, 'write');
+  addLog('Custom topic: ' + title);
   var writePrompt = buildPrompt(spec, desc || '', articleLength, extra);
-  CURRENT_WL = getWlOptions();
-  S.generating = true;
 
   callLLM(getSystemPrompt(), writePrompt, baseTokens)
     .then(function(draft) {
@@ -2980,34 +3251,12 @@ function generateFromCustom() {
         .then(function(polished) { return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten }; })
         .catch(function() { return r; });
     })
-    .then(function(result) {
-      showPipeline(pipelineEl, 'done');
-      spec.title = result.seo.h1 || spec.title;
-      var wp = buildWpBlock(spec, result.body, result.seo);
-      S.generated.push({
-        spec: spec, wp: wp, seo: result.seo, status: 'done',
-        articleLength: articleLength, qc: result.qc,
-        wasRewritten: result.wasRewritten || false, eeatPolished: true,
-        savedAt: Date.now(), wlOptions: CURRENT_WL
-      });
-      saveArticles();
-      document.getElementById('gen-count').textContent = S.generated.length;
-      addLog('Custom article complete: ' + spec.title, 'ok');
-      renderGenList();
-    })
+    .then(function(result) { finish(result, false); })
     .catch(function(e) {
       showPipeline(pipelineEl, 'error');
       addLog('Custom topic failed: ' + e.message, 'err');
     })
-    .finally(function() {
-      S.generating = false;
-      // Restore sport if changed
-      if (prevSport !== sportId) {
-        ACTIVE_SPORT = prevSport;
-        SITE_URL = getSiteUrl();
-        SRC_LABELS = getSrcLabels();
-      }
-    });
+    .finally(cleanup);
 }
 
 function updateCustomCats() {
@@ -3020,6 +3269,33 @@ function updateCustomCats() {
     o.value = o.textContent = c;
     sel.appendChild(o);
   });
+  // Show club dropdown only when Football is selected
+  var clubRow = document.getElementById('custom-club-row');
+  if (clubRow) clubRow.style.display = sportId === 'football' ? 'flex' : 'none';
+  if (sportId === 'football') rebuildCustomClubDropdown();
+}
+
+function rebuildCustomClubDropdown() {
+  var sel = document.getElementById('custom-club');
+  if (!sel) return;
+  var prev = sel.value;
+  sel.innerHTML = '';
+  // Blank option (optional — for non-match topics)
+  var blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = '— Select club (optional for Match Preview / Match Report) —';
+  sel.appendChild(blank);
+  SPORTS.football.entityGroups.forEach(function(g) {
+    var grp = document.createElement('optgroup');
+    grp.label = g.group;
+    (g.items || []).forEach(function(t) {
+      var o = document.createElement('option');
+      o.value = o.textContent = t;
+      grp.appendChild(o);
+    });
+    sel.appendChild(grp);
+  });
+  if (prev) sel.value = prev;
 }
 
 function populateSportDropdowns() {
