@@ -50,7 +50,7 @@ function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) || origin === 'null';
   return {
     'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-WC-Token',
     'Access-Control-Max-Age': '86400',
   };
@@ -200,6 +200,54 @@ export default {
           : '';
 
         return jsonResponse({ title, text, url: articleUrl }, 200, cors);
+      } catch (e) {
+        return jsonResponse({ error: e.message }, 500, cors);
+      }
+    }
+
+    // ── Route: GET /api/feedback → read all feedback entries from KV ──
+    if (url.pathname === '/api/feedback' && request.method === 'GET') {
+      try {
+        const raw = await env.FEEDBACK.get('entries');
+        const entries = raw ? JSON.parse(raw) : [];
+        return jsonResponse({ entries, count: entries.length }, 200, cors);
+      } catch (e) {
+        return jsonResponse({ entries: [], error: e.message }, 200, cors);
+      }
+    }
+
+    // ── Route: POST /api/feedback → add a feedback entry to KV ──
+    if (url.pathname === '/api/feedback' && request.method === 'POST') {
+      try {
+        const { entry } = await request.json();
+        if (!entry || !entry.feedback) return jsonResponse({ error: 'Missing entry.feedback' }, 400, cors);
+
+        // Read existing entries
+        const raw = await env.FEEDBACK.get('entries');
+        const entries = raw ? JSON.parse(raw) : [];
+
+        // Deduplicate: skip if same typeId + first 80 chars of feedback already exists
+        const prefix = (entry.feedback || '').slice(0, 80);
+        const isDupe = entries.some(e => e.typeId === entry.typeId && (e.feedback || '').slice(0, 80) === prefix);
+
+        if (!isDupe) {
+          // Add unique ID if not present
+          if (!entry.id) entry.id = 'fb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+          entries.push(entry);
+          await env.FEEDBACK.put('entries', JSON.stringify(entries));
+        }
+
+        return jsonResponse({ entries, count: entries.length, added: !isDupe }, 200, cors);
+      } catch (e) {
+        return jsonResponse({ error: e.message }, 500, cors);
+      }
+    }
+
+    // ── Route: DELETE /api/feedback → clear all feedback entries (admin) ──
+    if (url.pathname === '/api/feedback' && request.method === 'DELETE') {
+      try {
+        await env.FEEDBACK.delete('entries');
+        return jsonResponse({ cleared: true }, 200, cors);
       } catch (e) {
         return jsonResponse({ error: e.message }, 500, cors);
       }

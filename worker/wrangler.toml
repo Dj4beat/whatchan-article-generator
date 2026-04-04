@@ -4,3 +4,8 @@ compatibility_date = "2024-12-01"
 
 # OPENROUTER_API_KEY is stored as a secret — set it with:
 #   npx wrangler secret put OPENROUTER_API_KEY
+
+# KV namespace for persistent feedback/learning memory
+[[kv_namespaces]]
+binding = "FEEDBACK"
+id = "5b31d7cca89744d0a9761e302eb19436"
