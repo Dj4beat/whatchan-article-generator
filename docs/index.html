@@ -1640,10 +1640,26 @@ function buildWpBlock(spec, body, seo) {
   seoBlock += '  Keywords: ' + (seo.allKeywords || spec.keywords).join(', ') + '\n';
   seoBlock += '-->';
 
-  // Sport banner (mid-article)
+  // Sport banner — inserted mid-article between sections
   var sportBanner = buildBannerHtml(SPORT_BANNERS[ACTIVE_SPORT] || SPORT_BANNERS.football);
-  // Blog banner (near bottom)
+  // Blog banner — bottom of article
   var blogBannerHtml = buildBannerHtml(BLOG_BANNER);
+
+  // Split body at nearest <h2> to the midpoint for natural banner placement
+  function insertMidBanner(bodyHtml, bannerHtml) {
+    var h2positions = [];
+    var re = /<h2[\s>]/gi;
+    var m;
+    while ((m = re.exec(bodyHtml)) !== null) h2positions.push(m.index);
+    if (h2positions.length < 2) return bodyHtml + '\n' + bannerHtml; // fallback: append
+    var mid = bodyHtml.length / 2;
+    var best = h2positions.reduce(function(prev, pos) {
+      return Math.abs(pos - mid) < Math.abs(prev - mid) ? pos : prev;
+    });
+    return bodyHtml.slice(0, best) + '\n<!-- Sport TV Banner -->\n' + bannerHtml + '\n\n' + bodyHtml.slice(best);
+  }
+
+  var bodyWithBanner = insertMidBanner(body, sportBanner);
 
   // Tags HTML
   var tagsArr = seo.tags || spec.keywords;
@@ -1666,10 +1682,7 @@ function buildWpBlock(spec, body, seo) {
     '',
     '<div class="wc-post">',
     '',
-    body,
-    '',
-    '<!-- Sport TV Banner -->',
-    sportBanner,
+    bodyWithBanner,
     '',
     '<!-- Blog Banner -->',
     blogBannerHtml,
