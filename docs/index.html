@@ -627,14 +627,14 @@ var PROXY_URL = 'https://whatchan-api-proxy.dj4beat.workers.dev';
 //  MODELS (OpenRouter)
 // ═══════════════════════════════════════════════════════════════
 var MODELS = [
-  { id: 'meta-llama/llama-3.3-70b-instruct:free',   label: 'Llama 3.3 70B (Free)',               free: true,  costIn: 0,       costOut: 0       },
-  { id: 'google/gemma-3-27b-it:free',              label: 'Gemma 3 27B (Free)',                 free: true,  costIn: 0,       costOut: 0       },
-  { id: 'deepseek/deepseek-chat-v3-0324:free',     label: 'DeepSeek V3 (Free)',                 free: true,  costIn: 0,       costOut: 0       },
+  { id: 'google/gemini-2.5-flash',                  label: 'Gemini 2.5 Flash (Cheap)',           free: false, costIn: 0.00015, costOut: 0.0006  },
+  { id: 'google/gemini-2.5-pro-preview-03-25',     label: 'Gemini 2.5 Pro',                     free: false, costIn: 0.00125, costOut: 0.01    },
+  { id: 'openai/gpt-4o-mini',                       label: 'GPT-4o Mini',                        free: false, costIn: 0.00015, costOut: 0.0006  },
+  { id: 'openai/gpt-4o',                            label: 'GPT-4o',                             free: false, costIn: 0.0025,  costOut: 0.01    },
   { id: 'anthropic/claude-sonnet-4',                label: 'Claude Sonnet 4',                    free: false, costIn: 0.003,   costOut: 0.015   },
   { id: 'anthropic/claude-opus-4',                  label: 'Claude Opus 4',                      free: false, costIn: 0.015,   costOut: 0.075   },
-  { id: 'openai/gpt-4o',                            label: 'GPT-4o',                             free: false, costIn: 0.0025,  costOut: 0.01    },
-  { id: 'openai/gpt-4o-mini',                       label: 'GPT-4o Mini',                        free: false, costIn: 0.00015, costOut: 0.0006  },
-  { id: 'google/gemini-2.5-pro-preview-03-25',     label: 'Gemini 2.5 Pro',                     free: false, costIn: 0.00125, costOut: 0.01    },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free',   label: 'Llama 3.3 70B (Free*)',              free: true,  costIn: 0,       costOut: 0       },
+  { id: 'deepseek/deepseek-chat-v3-0324:free',     label: 'DeepSeek V3 (Free*)',                free: true,  costIn: 0,       costOut: 0       },
 ];
 var ACTIVE_MODEL = MODELS[0].id;
 
