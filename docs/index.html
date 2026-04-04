@@ -2349,6 +2349,25 @@ function rewriteWithFixes(spec, originalHtml, newsContext, qcResult) {
   return callLLM(getSystemPrompt(), prompt, tokens);
 }
 
+// Save hallucination findings to feedback memory — learn from every internal correction
+function saveHallucinationFeedback(scan, spec) {
+  if (!scan || !scan.items || !scan.items.length) return;
+  var types = {};
+  scan.items.forEach(function(item) { types[item.type] = (types[item.type] || 0) + 1; });
+  var summary = Object.keys(types).map(function(t) { return t + ' (' + types[t] + ')'; }).join(', ');
+  saveFeedbackEntry({
+    category: spec.category || '',
+    typeId: spec.typeId || '',
+    sport: ACTIVE_SPORT,
+    model: ACTIVE_MODEL,
+    feedback: 'AUTO-HALLUCINATION: Stripped ' + scan.items.length + ' item(s) before publication. Types: ' + summary,
+    qcIssues: scan.items.slice(0, 5).map(function(item) {
+      return { severity: 'critical', description: '[' + item.type + '] ' + (item.text || '').slice(0, 100) };
+    }),
+    timestamp: Date.now()
+  });
+}
+
 // Auto-retry loop: rewrites until QC passes or max attempts exhausted.
 // Each retry carries ALL accumulated issues so the model sees the full history.
 function retryUntilPass(spec, draft, context, firstQcResult, maxAttempts) {
@@ -2357,15 +2376,20 @@ function retryUntilPass(spec, draft, context, firstQcResult, maxAttempts) {
 
   function attempt(num, currentDraft, prevQc) {
     if (prevQc.verdict === 'PASS' || num > maxAttempts) {
-      // 3 attempts exhausted — auto-save QC failures to feedback memory so the system learns
-      if (num > maxAttempts && prevQc.verdict === 'FAIL') {
-        addLog('QC FAIL after ' + maxAttempts + ' attempts — saving to feedback memory', 'err');
+      // Save to feedback memory whenever ANY internal correction was needed — learn from every mistake
+      if (num > 1 && allIssues.length > 0) {
+        var wasExhausted = num > maxAttempts && prevQc.verdict === 'FAIL';
+        var feedbackMsg = wasExhausted
+          ? 'AUTO: QC FAILED after ' + maxAttempts + ' attempts (unresolved). Issues: '
+          : 'AUTO-CORRECTED: QC passed after ' + (num - 1) + ' retry(s). Original issues: ';
+        if (wasExhausted) addLog('QC FAIL after ' + maxAttempts + ' attempts — saving to feedback memory', 'err');
+        else addLog('QC passed on retry ' + (num - 1) + ' — saving corrected issues to feedback memory', 'ok');
         saveFeedbackEntry({
           category: spec.category || '',
           typeId: spec.typeId || '',
           sport: ACTIVE_SPORT,
           model: ACTIVE_MODEL,
-          feedback: 'AUTO: QC failed after ' + maxAttempts + ' attempts. Issues: ' + allIssues.slice(0, 5).map(function(i) { return i.description; }).join('; '),
+          feedback: feedbackMsg + allIssues.slice(0, 5).map(function(i) { return i.description; }).join('; '),
           qcIssues: allIssues.slice(0, 10),
           timestamp: Date.now()
         });
@@ -2579,6 +2603,7 @@ function runArticlePipeline(opts) {
           draft = stripHallucinations(draft, scan);
           draft = cleanMarkdown(draft);
           hadHallucinations = true;
+          saveHallucinationFeedback(scan, spec);
         } else {
           addLog('Hallucination scan: clean', 'ok');
         }
@@ -2772,6 +2797,7 @@ function runEgGenerate() {
             addLog('[' + spec.team + '] Hallucinations removed (' + scan.items.length + ')', 'err');
             draft = cleanMarkdown(stripHallucinations(draft, scan));
             hadHallucinations = true;
+            saveHallucinationFeedback(scan, spec);
           } else {
             addLog('[' + spec.team + '] Hallucination scan: clean', 'ok');
           }
@@ -3031,6 +3057,7 @@ function reprocessWithFeedback(idx) {
         if (scan.hallucinations_found && scan.items && scan.items.length) {
           addLog('Reprocess: hallucinations removed (' + scan.items.length + ')', 'err');
           draft = cleanMarkdown(stripHallucinations(draft, scan));
+          saveHallucinationFeedback(scan, spec);
         }
         return draft;
       });
@@ -3525,6 +3552,7 @@ function generateFromCustom() {
             addLog('Hallucinations removed (' + scan.items.length + ')', 'err');
             draft = cleanMarkdown(stripHallucinations(draft, scan));
             hadHallucinations = true;
+            saveHallucinationFeedback(scan, spec);
           } else { addLog('Hallucination scan: clean', 'ok'); }
           return { draft: draft, matchContext: r.matchContext, hadHallucinations: hadHallucinations };
         });
