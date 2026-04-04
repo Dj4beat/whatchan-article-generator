@@ -1,0 +1,2641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatChan Article Generator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0c1220;
+      color: #e2e8f0;
+      font-family: Georgia, 'Times New Roman', serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #1e3a8a, #1e40af 55%, #2563eb);
+      padding: 18px 26px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.5);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .logo { width: 40px; height: 40px; background: white; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .h-title { font-size: 1.25rem; font-weight: 700; color: white; }
+    .h-sub { font-size: .74rem; color: #93c5fd; font-family: system-ui,sans-serif; margin-top: 2px; }
+    nav { margin-left: auto; display: flex; gap: 6px; }
+    .nav-btn {
+      padding: 7px 16px; border-radius: 7px; border: none; cursor: pointer;
+      font-family: system-ui,sans-serif; font-weight: 600; font-size: .8rem;
+      transition: all .15s; background: rgba(255,255,255,.14); color: white;
+    }
+    .nav-btn.active { background: white; color: #1e40af; }
+
+    /* ── Layout ── */
+    #app-body { flex: 1; display: flex; overflow: hidden; }
+    #main-panel { flex: 1; overflow-y: auto; padding: 22px 22px 100px; }
+
+    #side-preview {
+      width: 46%; border-left: 1px solid #1e293b; background: #f8fafc;
+      overflow-y: auto; display: none; flex-direction: column; flex-shrink: 0;
+    }
+    #side-preview.open { display: flex; }
+    .prev-hdr {
+      position: sticky; top: 0; background: #131e30; border-bottom: 1px solid #1e293b;
+      padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; z-index: 10;
+    }
+    .prev-hdr-label { font-family: system-ui,sans-serif; font-size: .75rem; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+    .prev-hdr-actions { display: flex; gap: 6px; align-items: center; }
+    #prev-content { padding: 26px 30px; }
+
+    /* ── Tabs ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: #131e30; border: 1px solid #1e293b;
+      border-radius: 13px; padding: 18px 20px; margin-bottom: 18px;
+    }
+    .card-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; }
+    .card-title { font-size: .95rem; font-family: system-ui,sans-serif; font-weight: 700; }
+    .card-desc { font-size: .78rem; color: #475569; font-family: system-ui,sans-serif; margin-bottom: 13px; }
+
+    /* ── Pills & badges ── */
+    .pill {
+      font-size: .66rem; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+      font-family: system-ui,sans-serif; text-transform: uppercase; letter-spacing: .07em; display: inline-block;
+    }
+    .pill-topical { background: #fef3c7; color: #92400e; }
+    .pill-evergreen { background: #1e2d3d; color: #64748b; border: 1px solid #263354; }
+    .pill-cat {
+      font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+      font-family: system-ui,sans-serif; text-transform: uppercase; letter-spacing: .06em;
+      flex-shrink: 0; white-space: nowrap; display: inline-block;
+    }
+
+    /* ── Source badges ── */
+    .src-badge {
+      font-size: .62rem; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+      font-family: system-ui,sans-serif; text-transform: uppercase; letter-spacing: .06em;
+      display: inline-block; flex-shrink: 0;
+    }
+    .src-bbc { background: #fee2e2; color: #991b1b; }
+    .src-sky { background: #dbeafe; color: #1e40af; }
+    .src-athletic { background: #fef3c7; color: #92400e; }
+    .src-guardian { background: #d1fae5; color: #065f46; }
+    .src-custom { background: #ede9fe; color: #5b21b6; }
+    .src-pdc { background: #fef3c7; color: #92400e; }
+    .src-eurosport { background: #dbeafe; color: #1e40af; }
+    .src-autosport { background: #fee2e2; color: #991b1b; }
+
+    /* ── Controls ── */
+    .ctrl-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .ctrl label {
+      display: block; font-size: .68rem; color: #64748b; margin-bottom: 4px;
+      font-family: system-ui,sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+    }
+    select, .text-input {
+      background: #0c1220; color: #e2e8f0; border: 1px solid #2d3e55;
+      border-radius: 7px; padding: 7px 11px; font-size: .87rem; font-family: system-ui,sans-serif; cursor: pointer; max-width: 340px;
+    }
+    textarea {
+      background: #0c1220; color: #e2e8f0; border: 1px solid #2d3e55;
+      border-radius: 7px; padding: 9px 13px; font-size: .85rem; font-family: Georgia,serif;
+      width: 100%; resize: vertical;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      border-radius: 8px; cursor: pointer; font-family: system-ui,sans-serif;
+      font-weight: 600; transition: all .15s; display: inline-flex; align-items: center; gap: 5px; border: none;
+    }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg,#1e40af,#3b82f6); color: white; padding: 10px 22px; font-size: .87rem; box-shadow: 0 3px 10px rgba(59,130,246,.3); }
+    .btn-primary.sm { padding: 6px 13px; font-size: .77rem; }
+    .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #2d3e55; padding: 10px 22px; font-size: .87rem; }
+    .btn-ghost.sm { padding: 6px 13px; font-size: .77rem; }
+    .btn-success { background: #14532d; color: #86efac; border: 1px solid #166534; padding: 10px 22px; font-size: .87rem; }
+    .btn-success.sm { padding: 6px 13px; font-size: .77rem; }
+
+    /* ── News feed ── */
+    #feed-list { display: flex; flex-direction: column; gap: 8px; }
+    .feed-item {
+      background: #0f1a28; border: 1.5px solid #1e293b; border-radius: 9px;
+      padding: 13px 16px; cursor: pointer; transition: all .13s;
+    }
+    .feed-item:hover { border-color: #2d3e55; background: #131e30; }
+    .feed-item.selected { border-color: #3b82f6; background: #1a2a45; }
+    .feed-title { font-size: .9rem; font-weight: 600; color: #e2e8f0; line-height: 1.35; margin-bottom: 4px; }
+    .feed-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .feed-time { font-size: .72rem; color: #475569; font-family: system-ui,sans-serif; }
+    .feed-desc { font-size: .78rem; color: #64748b; margin-top: 6px; line-height: 1.4; }
+
+    /* ── Feed expand panel ── */
+    .feed-expand {
+      display: none; margin-top: 12px; padding-top: 12px;
+      border-top: 1px solid #1e293b;
+    }
+    .feed-expand.open { display: block; }
+    .feed-expand .ctrl-row { margin-bottom: 10px; }
+
+    /* ── URL paste card ── */
+    #url-card {
+      background: #131e30; border: 1.5px dashed #2d3e55; border-radius: 11px;
+      padding: 16px 18px; margin-bottom: 14px;
+    }
+    #url-card .url-row { display: flex; gap: 8px; align-items: center; }
+    #url-input {
+      flex: 1; background: #0c1220; color: #e2e8f0; border: 1px solid #2d3e55;
+      border-radius: 7px; padding: 8px 12px; font-size: .85rem; font-family: system-ui,sans-serif;
+    }
+    #url-status { font-size: .78rem; color: #475569; font-family: system-ui,sans-serif; margin-top: 8px; }
+
+    /* ── Feed filter bar ── */
+    .filter-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+    .filter-btn {
+      padding: 5px 12px; border-radius: 20px; border: 1px solid #2d3e55;
+      background: transparent; color: #64748b; cursor: pointer;
+      font-family: system-ui,sans-serif; font-weight: 600; font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .05em; transition: all .13s;
+    }
+    .filter-btn.active { background: #1e40af; border-color: #3b82f6; color: white; }
+
+    /* ── Model selector ── */
+    .model-card {
+      background: #0f1a28; border: 1px solid #1e293b; border-radius: 9px;
+      padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .model-card label { font-size: .68rem; color: #64748b; font-family: system-ui,sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+    #model-cost { font-size: .78rem; color: #fbbf24; font-family: system-ui,sans-serif; font-weight: 600; }
+    .model-free { color: #86efac; }
+
+    /* ── Length buttons ── */
+    .len-btns { display: flex; gap: 6px; }
+    .len-btn {
+      padding: 6px 14px; border-radius: 7px; border: 1.5px solid #2d3e55;
+      background: transparent; color: #64748b; cursor: pointer;
+      font-family: system-ui,sans-serif; font-weight: 600; font-size: .75rem; transition: all .13s;
+    }
+    .len-btn.active { border-color: #3b82f6; background: #1e40af; color: white; }
+
+    /* ── Evergreen list ── */
+    .topic-row {
+      background: #0f1a28; border: 1.5px solid #1e293b; border-radius: 9px;
+      padding: 11px 14px; cursor: pointer; display: flex; align-items: center; gap: 12px; transition: all .13s;
+    }
+    .topic-row:hover { border-color: #2d3e55; }
+    .topic-row.sel { background: #1a2a45; border-color: #3b82f6; }
+    .chk {
+      width: 20px; height: 20px; border-radius: 50%; border: 2px solid #2d3e55;
+      background: transparent; display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: white; flex-shrink: 0; transition: all .13s;
+    }
+    .chk.on { border-color: #3b82f6; background: #3b82f6; }
+    .topic-label { flex: 1; font-size: .88rem; font-weight: 600; color: #94a3b8; line-height: 1.3; }
+    .topic-row.sel .topic-label { color: #bfdbfe; }
+
+    /* ── Bottom bar ── */
+    #bottom-wrap {
+      position: sticky; bottom: 0;
+      background: linear-gradient(to top, #0c1220 75%, transparent);
+      padding-top: 18px; padding-bottom: 4px; margin-top: 16px;
+    }
+    #bottom-bar {
+      background: #131e30; border: 1px solid #1e293b; border-radius: 11px;
+      padding: 13px 18px; display: flex; align-items: center;
+      gap: 12px; flex-wrap: wrap; box-shadow: 0 -4px 20px rgba(0,0,0,.4);
+    }
+    .batch-lbl { font-size: .78rem; color: #475569; font-family: system-ui,sans-serif; white-space: nowrap; }
+    #batch-btns { display: flex; gap: 6px; }
+    .bb {
+      width: 32px; height: 32px; border-radius: 7px; border: 1.5px solid #2d3e55;
+      background: transparent; color: #64748b; cursor: pointer;
+      font-family: system-ui,sans-serif; font-weight: 700; font-size: .82rem; transition: all .13s;
+    }
+    .bb.on { border-color: #3b82f6; background: #1e40af; color: white; }
+    .spacer { flex: 1; }
+    #sel-status { font-size: .8rem; color: #475569; font-family: system-ui,sans-serif; }
+
+    /* ── Activity log ── */
+    #activity-log {
+      background: #0c1220; border: 1px solid #1e293b; border-radius: 9px;
+      padding: 11px 14px; margin-bottom: 18px; font-family: 'Courier New', monospace;
+      font-size: .78rem; max-height: 180px; overflow-y: auto; display: none;
+    }
+    #activity-log.vis { display: block; }
+    .log-hdr { color: #334155; margin-bottom: 5px; font-family: system-ui,sans-serif; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .log-line { margin-bottom: 2px; color: #475569; }
+    .log-line.ok { color: #86efac; }
+    .log-line.err { color: #f87171; }
+    .log-working { color: #fbbf24; }
+
+    /* ── Empty state ── */
+    #empty-state { text-align: center; padding: 56px 24px; color: #334155; font-family: system-ui,sans-serif; display: none; }
+    #empty-state.vis { display: block; }
+    #empty-state .emo { font-size: 2.5rem; margin-bottom: 10px; }
+    #empty-state strong { color: #60a5fa; }
+
+    /* ── Generated cards ── */
+    #gen-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    .gen-card { background: #0f1a28; border: 1.5px solid #1e293b; border-radius: 11px; overflow: hidden; transition: all .18s; }
+    .gen-card.prev { background: #1a2a45; border-color: #3b82f6; }
+    .gen-card.err { border-color: #7f1d1d; }
+    .gen-card-body { padding: 15px 16px; }
+    .gen-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7px; }
+    .gen-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .gen-status-ok { font-size: .72rem; color: #86efac; font-family: system-ui,sans-serif; flex-shrink: 0; }
+    .gen-status-err { font-size: .72rem; color: #f87171; font-family: system-ui,sans-serif; flex-shrink: 0; }
+    .gen-title { font-size: .93rem; font-weight: 600; color: #e2e8f0; line-height: 1.35; margin-bottom: 4px; }
+    .gen-meta { font-size: .74rem; color: #475569; font-family: system-ui,sans-serif; font-style: italic; margin-bottom: 11px; }
+    .gen-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+    .inline-prev { border-top: 1px solid #1e293b; display: none; }
+    .inline-prev.open { display: block; }
+    .inline-prev-inner { background: #f8fafc; padding: 24px 28px; max-height: 520px; overflow-y: auto; }
+
+    /* ── Pipeline progress ── */
+    .pipeline-bar {
+      display: flex; gap: 4px; margin: 10px 0; align-items: center;
+    }
+    .pipeline-step {
+      font-size: .68rem; font-family: system-ui,sans-serif; font-weight: 600;
+      padding: 4px 10px; border-radius: 6px; color: #475569;
+      background: #0c1220; border: 1px solid #1e293b; transition: all .2s;
+    }
+    .pipeline-step.active { color: #fbbf24; border-color: #fbbf24; background: #1a1a0c; }
+    .pipeline-step.done { color: #86efac; border-color: #166534; background: #0c1a0c; }
+    .pipeline-step.error { color: #f87171; border-color: #7f1d1d; }
+    .pipeline-arrow { color: #334155; font-size: .7rem; }
+
+    /* ── SEO fields ── */
+    .seo-panel {
+      background: #0c1220; border: 1px solid #1e293b; border-radius: 7px;
+      padding: 10px 13px; margin-top: 8px; font-family: system-ui,sans-serif; font-size: .75rem;
+      display: none;
+    }
+    .seo-panel.open { display: block; }
+    .seo-row { margin-bottom: 6px; color: #64748b; }
+    .seo-row strong { color: #94a3b8; }
+
+    /* ── QC panel ── */
+    .qc-panel {
+      background: #0c1220; border: 1px solid #1e293b; border-radius: 7px;
+      padding: 10px 13px; margin-top: 8px; font-family: system-ui,sans-serif; font-size: .75rem;
+      display: none;
+    }
+    .qc-panel.open { display: block; }
+    .qc-pass { color: #86efac; font-weight: 700; }
+    .qc-fail { color: #f87171; font-weight: 700; }
+    .qc-issue { margin: 4px 0; padding: 4px 8px; border-radius: 4px; background: #1a1020; }
+    .qc-issue.critical { border-left: 3px solid #f87171; }
+    .qc-issue.major { border-left: 3px solid #fbbf24; }
+    .qc-issue.minor { border-left: 3px solid #64748b; }
+
+    /* ── File upload ── */
+    .upload-area {
+      border: 1.5px dashed #2d3e55; border-radius: 9px; padding: 12px 16px;
+      text-align: center; cursor: pointer; transition: all .15s;
+      font-family: system-ui,sans-serif; font-size: .8rem; color: #475569;
+    }
+    .upload-area:hover { border-color: #3b82f6; color: #94a3b8; }
+    .upload-area.has-file { border-color: #166534; background: #0c1a0c; color: #86efac; }
+
+    /* ── Loading spinner ── */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #334155; border-top-color: #3b82f6;
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Topical preview ── */
+    #topical-preview {
+      margin-top: 12px; background: #0c1220; border-radius: 7px; padding: 9px 13px;
+      font-size: .82rem; color: #475569; line-height: 1.35; font-style: italic;
+    }
+    #topical-preview.queued { color: #bfdbfe; font-style: normal; }
+
+    footer {
+      text-align: center; padding: 12px; color: #1e293b;
+      font-family: system-ui,sans-serif; font-size: .72rem;
+      border-top: 1px solid #0f1a28; flex-shrink: 0;
+    }
+    footer a { color: #334155; }
+
+    /* ── Article output CSS ── */
+    .wh-article{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:860px;margin:0 auto;color:#1e293b;line-height:1.75;}
+    /* ── Sport selector bar ── */
+    .sport-bar {
+      background: #0a0f1a; border-bottom: 1px solid #1e293b;
+      padding: 8px 22px; display: flex; gap: 6px; align-items: center;
+      overflow-x: auto; flex-shrink: 0;
+    }
+    .sport-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 14px; border-radius: 10px; border: 1.5px solid transparent;
+      background: transparent; cursor: pointer; transition: all .15s;
+      min-width: 72px;
+    }
+    .sport-btn:hover { background: #131e30; }
+    .sport-btn.active { background: #1a2a45; border-color: #3b82f6; }
+    .sport-icon { font-size: 1.4rem; line-height: 1; }
+    .sport-label {
+      font-size: .62rem; font-weight: 700; color: #64748b;
+      font-family: system-ui,sans-serif; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .sport-btn.active .sport-label { color: #93c5fd; }
+
+    .wh-article h1{color:#1e40af;font-size:2em;margin-bottom:.3em;line-height:1.2;}
+    .wh-article h2{color:#1e40af;font-size:1.4em;margin-top:2em;border-left:4px solid #3b82f6;padding-left:12px;}
+    .wh-article h3{color:#1e40af;font-size:1.1em;margin-top:1.5em;}
+    .wh-article p{margin:.9em 0;}
+    .wh-article ul{padding-left:1.4em;}
+    .wh-article li{margin:.4em 0;}
+    .wh-article details{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:.6em 0;}
+    .wh-article summary{cursor:pointer;font-weight:600;color:#1e40af;}
+    .wh-article details p{margin-top:.6em;color:#475569;}
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════ HEADER ═══════════════════ -->
+<header>
+  <div class="logo">&#9917;</div>
+  <div>
+    <div class="h-title">WhatChan Article Generator</div>
+    <div class="h-sub" id="h-sub">Generate unique, SEO-optimised football articles with AI</div>
+  </div>
+  <nav>
+    <button class="nav-btn active" onclick="showTab('feed')">News Feed</button>
+    <button class="nav-btn" onclick="showTab('evergreen')">Evergreen</button>
+    <button class="nav-btn" onclick="showTab('gen')">Generated (<span id="gen-count">0</span>)</button>
+  </nav>
+</header>
+
+<!-- ═══════════════════ SPORT SELECTOR ═══════════════════ -->
+<div class="sport-bar" id="sport-bar"></div>
+
+<!-- ═══════════════════ APP BODY ═══════════════════ -->
+<div id="app-body">
+<div id="main-panel">
+
+  <!-- ── Model + Length controls (shared) ── -->
+  <div class="model-card">
+    <div class="ctrl">
+      <label>AI Model</label>
+      <select id="model-select" onchange="setModel(this.value)"></select>
+    </div>
+    <span id="model-cost"></span>
+    <div style="flex:1"></div>
+    <div class="ctrl">
+      <label>Article Length</label>
+      <div class="len-btns">
+        <button class="len-btn active" onclick="setLength('standard')">Standard</button>
+        <button class="len-btn" onclick="setLength('medium')">Medium</button>
+        <button class="len-btn" onclick="setLength('longform')">Long-form</button>
+        <button class="len-btn" onclick="setLength('custom')">Custom</button>
+        <input type="number" id="custom-word-count" min="200" max="10000" step="100" value="1000" placeholder="words" style="display:none;width:80px;padding:4px 8px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:#e2e8f0;font-size:0.8rem;" onchange="S.customWordCount=Math.max(200,Math.min(10000,parseInt(this.value)||1000));updateCostEstimate();refreshBottomBar();">
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ TAB: NEWS FEED ════════════ -->
+  <div id="tab-feed" class="tab-panel active">
+
+    <!-- URL paste -->
+    <div id="url-card">
+      <div class="card-hdr">
+        <span class="card-title">Paste Article URL</span>
+        <span class="pill pill-topical">Any Source</span>
+      </div>
+      <div class="url-row">
+        <input type="text" id="url-input" placeholder="https://www.bbc.co.uk/sport/football/..." />
+        <button class="btn btn-primary sm" id="url-fetch-btn" onclick="fetchUrlArticle()">Fetch</button>
+      </div>
+      <div id="url-status"></div>
+      <!-- Expand panel for fetched URL -->
+      <div id="url-expand" class="feed-expand">
+        <div id="url-preview-text" style="background:#0c1220;border-radius:7px;padding:9px 13px;font-size:.82rem;color:#94a3b8;max-height:120px;overflow-y:auto;margin-bottom:10px;line-height:1.4;"></div>
+        <div class="ctrl-row">
+          <div class="ctrl">
+            <label>Category</label>
+            <select id="url-cat">
+              <option>Season Analysis</option><option>Transfer News</option><option>Injury Updates</option>
+              <option>Competition Guides</option><option>Team Guides</option><option>Match Previews</option>
+              <option>Club News</option><option>Player Features</option><option>Manager Features</option>
+              <option>Fan Features</option><option>Fixture Analysis</option>
+            </select>
+          </div>
+          <div class="ctrl">
+            <label>Additional Context (optional)</label>
+            <div class="upload-area" id="url-upload-area" onclick="document.getElementById('url-file-input').click()">
+              Drop PDF/DOCX/TXT or click to upload
+            </div>
+            <input type="file" id="url-file-input" accept=".pdf,.docx,.txt,.md,.html" style="display:none" onchange="handleFileUpload(this,'url')" />
+          </div>
+        </div>
+        <textarea id="url-extra-notes" placeholder="Any extra notes or angles you want covered (optional)..." rows="2" style="margin-bottom:10px;"></textarea>
+        <button class="btn btn-primary" id="url-gen-btn" onclick="generateFromUrl()">Generate WhatChan Article</button>
+        <div id="url-pipeline" class="pipeline-bar" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Upload source article -->
+    <div id="upload-card" class="card" style="border-style:dashed;">
+      <div class="card-hdr">
+        <span class="card-title">Upload Source Article</span>
+        <span class="pill pill-topical">Trusted Source</span>
+      </div>
+      <div class="card-desc">Upload an article file (PDF, DOCX, TXT). Content is treated as 100% accurate — no QC verification needed for these facts.</div>
+      <div class="ctrl-row" style="margin-bottom:10px;">
+        <div class="ctrl" style="flex:1;">
+          <div class="upload-area" id="source-upload-area" onclick="document.getElementById('source-file-input').click()">
+            Drop PDF/DOCX/TXT or click to upload a source article
+          </div>
+          <input type="file" id="source-file-input" accept=".pdf,.docx,.txt,.md,.html" style="display:none" onchange="handleSourceUpload(this)" />
+        </div>
+      </div>
+      <div id="source-upload-preview" style="display:none;background:#0c1220;border-radius:7px;padding:9px 13px;font-size:.82rem;color:#94a3b8;max-height:120px;overflow-y:auto;margin-bottom:10px;line-height:1.4;"></div>
+      <div id="source-upload-expand" style="display:none;">
+        <div class="ctrl-row" style="margin-bottom:10px;">
+          <div class="ctrl">
+            <label>Category</label>
+            <select id="source-cat"></select>
+          </div>
+          <div class="ctrl">
+            <label>Sport</label>
+            <select id="source-sport" onchange="updateSourceCats()"></select>
+          </div>
+        </div>
+        <textarea id="source-extra-notes" placeholder="Any extra notes or angles you want covered (optional)..." rows="2" style="margin-bottom:10px;"></textarea>
+        <button class="btn btn-primary" onclick="generateFromUpload()">Generate WhatChan Article</button>
+        <div id="source-pipeline" class="pipeline-bar" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Custom topic -->
+    <div id="custom-card" class="card">
+      <div class="card-hdr">
+        <span class="card-title">Custom Topic</span>
+        <span class="pill pill-evergreen">Your Idea</span>
+      </div>
+      <div class="card-desc">Write about any topic — provide a title and description and the generator will create a unique article.</div>
+      <div class="ctrl-row" style="margin-bottom:10px;">
+        <input type="text" id="custom-title" class="text-input" placeholder="Article title or headline..." style="flex:1;max-width:none;" />
+      </div>
+      <textarea id="custom-desc" placeholder="Describe what the article should cover, key points, angle..." rows="3" style="margin-bottom:10px;"></textarea>
+      <div class="ctrl-row" style="margin-bottom:10px;">
+        <div class="ctrl">
+          <label>Category</label>
+          <select id="custom-cat"></select>
+        </div>
+        <div class="ctrl">
+          <label>Sport</label>
+          <select id="custom-sport" onchange="updateCustomCats()"></select>
+        </div>
+        <div class="ctrl">
+          <label>Extra Context (optional)</label>
+          <div class="upload-area" id="custom-upload-area" onclick="document.getElementById('custom-file-input').click()" style="min-width:180px;">
+            PDF/DOCX/TXT
+          </div>
+          <input type="file" id="custom-file-input" accept=".pdf,.docx,.txt,.md,.html" style="display:none" onchange="handleFileUpload(this,'custom')" />
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="generateFromCustom()">Generate WhatChan Article</button>
+      <div id="custom-pipeline" class="pipeline-bar" style="display:none;"></div>
+    </div>
+
+    <!-- Source filter bar -->
+    <div class="filter-bar">
+      <button class="filter-btn active" data-source="all" onclick="filterFeed('all')">All</button>
+      <button class="filter-btn" data-source="bbc" onclick="filterFeed('bbc')">BBC Sport</button>
+      <button class="filter-btn" data-source="sky" onclick="filterFeed('sky')">Sky Sports</button>
+      <button class="filter-btn" data-source="athletic" onclick="filterFeed('athletic')">The Athletic</button>
+      <button class="filter-btn" data-source="guardian" onclick="filterFeed('guardian')">Guardian</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost sm" onclick="loadFeeds()">Refresh</button>
+    </div>
+
+    <!-- Feed loading state -->
+    <div id="feed-loading" style="text-align:center;padding:40px;color:#475569;font-family:system-ui,sans-serif;">
+      <div class="spinner" style="width:24px;height:24px;margin:0 auto 12px;"></div>
+      Loading news feeds...
+    </div>
+
+    <!-- Feed list -->
+    <div id="feed-list"></div>
+  </div>
+
+  <!-- ════════════ TAB: EVERGREEN ════════════ -->
+  <div id="tab-evergreen" class="tab-panel">
+
+    <!-- Topical builder -->
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Topical Article Builder</span>
+        <span class="pill pill-topical">Topical</span>
+      </div>
+      <div class="card-desc">Pick a team and article type to create a timely, news-driven piece.</div>
+      <div class="ctrl-row">
+        <div class="ctrl">
+          <label>Team / Subject</label>
+          <select id="sel-team" onchange="updateTopicalPreview()"></select>
+        </div>
+        <div class="ctrl">
+          <label>Article Type</label>
+          <select id="sel-type" onchange="updateTopicalPreview()"></select>
+        </div>
+        <button class="btn btn-ghost" id="topical-btn" onclick="toggleTopical()">+ Add to Queue</button>
+      </div>
+      <div id="topical-preview"></div>
+    </div>
+
+    <!-- Evergreen list -->
+    <div style="margin-bottom:12px;">
+      <div class="eg-hdr">
+        <h2 style="font-size:.95rem;color:#94a3b8;font-family:system-ui,sans-serif;font-weight:600;">Evergreen Topics <span style="color:#334155;font-weight:400;">— always relevant, auto-dated</span></h2>
+      </div>
+    </div>
+    <div id="eg-list"></div>
+
+    <!-- Bottom bar for evergreen -->
+    <div id="bottom-wrap">
+      <div id="bottom-bar">
+        <span class="batch-lbl">Batch:</span>
+        <div id="batch-btns"></div>
+        <div class="spacer"></div>
+        <span id="sel-status"></span>
+        <button class="btn btn-primary" id="eg-gen-btn" disabled onclick="runEgGenerate()">Generate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ TAB: GENERATED ════════════ -->
+  <div id="tab-gen" class="tab-panel">
+    <div id="activity-log">
+      <div class="log-hdr">Activity Log</div>
+    </div>
+    <div id="empty-state">
+      <div class="emo">&#128196;</div>
+      <p>No articles generated yet.<br>Pick an article from the <strong>News Feed</strong> or <strong>Evergreen</strong> tab to get started.</p>
+    </div>
+    <div id="gen-list"></div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════ SIDE PREVIEW ═══════════════════ -->
+<div id="side-preview">
+  <div class="prev-hdr">
+    <span class="prev-hdr-label">Live Preview</span>
+    <div class="prev-hdr-actions">
+      <button class="btn btn-primary sm" onclick="sideCopy()">Copy HTML</button>
+      <button class="btn btn-ghost sm" onclick="closeSidePreview()" style="padding:4px 10px;font-size:1rem;">&times;</button>
+    </div>
+  </div>
+  <div id="prev-content"></div>
+</div>
+
+</div>
+
+<footer>
+  WhatChan Article Generator &mdash; Built by <a href="https://whatchan.co.uk/about-whatchan-adrian-dane" target="_blank">Adrian Dane</a>
+</footer>
+
+<!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+//  PROXY URL — points to your Cloudflare Worker
+//  Replace after deploying: npx wrangler deploy
+// ═══════════════════════════════════════════════════════════════
+var PROXY_URL = 'https://whatchan-api-proxy.dj4beat.workers.dev';
+
+// ═══════════════════════════════════════════════════════════════
+//  MODELS (OpenRouter)
+// ═══════════════════════════════════════════════════════════════
+var MODELS = [
+  { id: 'google/gemini-2.0-flash-exp',             label: 'Gemini 2.0 Flash (Free)',            free: true,  costIn: 0,       costOut: 0       },
+  { id: 'meta-llama/llama-3.3-70b-instruct',       label: 'Llama 3.3 70B (Free)',               free: true,  costIn: 0,       costOut: 0       },
+  { id: 'deepseek/deepseek-chat-v3-0324',          label: 'DeepSeek V3 (Free)',                 free: true,  costIn: 0,       costOut: 0       },
+  { id: 'anthropic/claude-sonnet-4',                label: 'Claude Sonnet 4',                    free: false, costIn: 0.003,   costOut: 0.015   },
+  { id: 'anthropic/claude-opus-4',                  label: 'Claude Opus 4',                      free: false, costIn: 0.015,   costOut: 0.075   },
+  { id: 'openai/gpt-4o',                            label: 'GPT-4o',                             free: false, costIn: 0.0025,  costOut: 0.01    },
+  { id: 'openai/gpt-4o-mini',                       label: 'GPT-4o Mini',                        free: false, costIn: 0.00015, costOut: 0.0006  },
+  { id: 'google/gemini-2.5-pro-preview-03-25',     label: 'Gemini 2.5 Pro',                     free: false, costIn: 0.00125, costOut: 0.01    },
+];
+var ACTIVE_MODEL = MODELS[0].id;
+
+function setModel(modelId) {
+  ACTIVE_MODEL = modelId;
+  document.getElementById('model-select').value = modelId;
+  updateCostEstimate();
+}
+
+function updateCostEstimate() {
+  var m = MODELS.filter(function(x){ return x.id === ACTIVE_MODEL; })[0];
+  var el = document.getElementById('model-cost');
+  if (!m) { el.textContent = ''; return; }
+  if (m.free) {
+    el.innerHTML = '<span class="model-free">FREE</span>';
+  } else {
+    // Rough estimate: standard ~4k tokens in + 3k out, medium ~5k+5k, longform ~6k+8k, custom scales with word count
+    var lens = { standard: [4, 3], medium: [5, 5], longform: [6, 8] };
+    var l;
+    if (S.articleLength === 'custom') {
+      var wc = S.customWordCount || 1000;
+      l = [Math.round(wc * 0.005) + 2, Math.round(wc * 0.0015)];
+    } else {
+      l = lens[S.articleLength] || lens.standard;
+    }
+    var cost = (l[0] * m.costIn) + (l[1] * m.costOut);
+    // Pipeline has ~3 calls: write + QC + EEAT
+    var total = cost * 3;
+    el.textContent = '~$' + total.toFixed(3) + '/article';
+  }
+}
+
+function initModelDropdown() {
+  var sel = document.getElementById('model-select');
+  sel.innerHTML = '';
+  var freeGroup = document.createElement('optgroup');
+  freeGroup.label = 'Free Models';
+  var paidGroup = document.createElement('optgroup');
+  paidGroup.label = 'Paid Models';
+  MODELS.forEach(function(m) {
+    var o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.label;
+    if (m.free) freeGroup.appendChild(o); else paidGroup.appendChild(o);
+  });
+  sel.appendChild(freeGroup);
+  sel.appendChild(paidGroup);
+  sel.value = ACTIVE_MODEL;
+  updateCostEstimate();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════════════
+var SITE_NAME = 'WhatChan';
+var AUTHOR    = {
+  name:     'Adrian Dane',
+  linkedin: 'https://www.linkedin.com/in/adrian-dane-9227b5347/',
+  profile:  'https://whatchan.co.uk/about-whatchan-adrian-dane'
+};
+
+var TODAY     = new Date();
+var TODAY_STR = TODAY.toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
+var TODAY_ISO = TODAY.toISOString().split('T')[0];
+var YEAR      = TODAY.getFullYear();
+var NEXT_YR   = String(YEAR + 1).slice(2);
+var MONTH     = TODAY.toLocaleDateString('en-GB', { month:'long' });
+
+// ═══════════════════════════════════════════════════════════════
+//  MULTI-SPORT CONFIG
+// ═══════════════════════════════════════════════════════════════
+var SPORTS = {
+  football: {
+    id: 'football', icon: '\u26BD', label: 'Football',
+    siteUrl: 'https://whatchan.co.uk',
+    subtitle: 'Generate unique, SEO-optimised football articles with AI',
+    rssSources: ['bbc','sky','athletic','guardian'],
+    srcLabels: { bbc:'BBC Sport', sky:'Sky Sports', athletic:'The Athletic', guardian:'Guardian' },
+    categories: ['Season Analysis','Transfer News','Injury Updates','Competition Guides','Broadcaster Guides','Team Guides','Manager Features','Player Features','Match Previews','Match Reports','Club News','Awards','Fan Features','Fixture Analysis'],
+    systemPromptExtra: 'You are an expert football journalist. Your writing style mirrors BBC Sport and Sky Sports \u2014 authoritative, conversational, fact-rich.\n'
+      + 'Use football-specific terminology: clean sheet, box-to-box, counter-press, xG, progressive passes.\n',
+    evergreen: [
+      { slug:'pl-top-scorer',     title:'Premier League Top Scorer ' + YEAR + ': Golden Boot Race, Stats & Predictions',          category:'Season Analysis',    keywords:['Premier League top scorer','Golden Boot race','Premier League goals'] },
+      { slug:'pl-managers',       title:'Best Premier League Managers ' + YEAR + ': Tactics, Records & Who\'s Performing',        category:'Manager Features',   keywords:['best Premier League managers','Premier League tactics','manager ratings'] },
+      { slug:'pl-relegation',     title:'Premier League Relegation Battle ' + YEAR + ': Who\'s in Danger?',                       category:'Season Analysis',    keywords:['Premier League relegation','drop zone battle','survival fight'] },
+      { slug:'ucl-english-clubs', title:'Champions League ' + YEAR + ': How Are English Clubs Performing?',                       category:'Competition Guides', keywords:['Champions League English clubs','UCL Premier League teams'] },
+      { slug:'pl-title-race',     title:'Premier League Title Race ' + YEAR + ': Latest Standings & Who Will Win',                category:'Season Analysis',    keywords:['Premier League title race','who will win Premier League'] },
+      { slug:'pl-young-players',  title:'Best Young Players in the Premier League ' + YEAR + ': Rising Stars to Watch',           category:'Player Features',    keywords:['best young Premier League players','Premier League wonderkids'] },
+      { slug:'fa-cup-preview',    title:'FA Cup ' + YEAR + '/' + NEXT_YR + ': Draw, Results, Favourites and How to Watch',        category:'Competition Guides', keywords:['FA Cup draw','FA Cup results','FA Cup favourites'] },
+      { slug:'pl-potm',           title:'Premier League Player of the Month ' + MONTH + ' ' + YEAR + ': Nominees & Winner',       category:'Awards',             keywords:['Premier League Player of the Month','PotM award'] },
+      { slug:'arsenal-season',    title:'Arsenal ' + YEAR + '/' + NEXT_YR + ' Season Review: Results, Form and What\'s Next',     category:'Team Guides',        keywords:['Arsenal season review','Arsenal results'] },
+      { slug:'liverpool-season',  title:'Liverpool ' + YEAR + '/' + NEXT_YR + ' Season Review: Results, Goals and Ambitions',     category:'Team Guides',        keywords:['Liverpool season review','Liverpool results'] },
+      { slug:'watch-pl-uk',       title:'How to Watch the Premier League in the UK ' + YEAR,                                      category:'Broadcaster Guides', keywords:['watch Premier League UK','Premier League streaming'] },
+      { slug:'pl-var',            title:'VAR in the Premier League ' + YEAR + ': How It Works and the Debate',                    category:'Fan Features',       keywords:['Premier League VAR','VAR controversy'] },
+      { slug:'pl-stadiums',       title:'Best Premier League Stadiums ' + YEAR + ': Atmosphere, Capacity & What Makes Them Special', category:'Fan Features',    keywords:['best Premier League stadiums','football atmosphere UK'] },
+      { slug:'pl-injuries',       title:'Premier League Injury News ' + MONTH + ' ' + YEAR + ': Every Club\'s Latest Team News',  category:'Injury Updates',     keywords:['Premier League injury news','Premier League team news'] }
+    ],
+    topicalTemplates: [
+      { id:'transfer', label:'Transfer News',  category:'Transfer News',    title: function(t,m,y){ return t + ' Transfer News: Latest Rumours, Deals and What Happens Next \u2014 ' + m + ' ' + y; }, keywords: function(t){ return [t + ' transfer news', t + ' signings', t + ' transfer rumours']; } },
+      { id:'injury',   label:'Injury Update',  category:'Injury Updates',   title: function(t,m,y){ return t + ' Injury News ' + m + ' ' + y + ': Who Is Out, Doubtful and When They Return'; }, keywords: function(t){ return [t + ' injury news', t + ' injured players', t + ' team news']; } },
+      { id:'manager',  label:'Manager News',   category:'Club News',        title: function(t,m,y){ return t + ' Manager Situation ' + m + ' ' + y + ': The Full Story'; }, keywords: function(t){ return [t + ' manager news', t + ' sacking', t + ' new manager']; } },
+      { id:'preview',  label:'Match Preview',  category:'Match Previews',   title: function(t,m,y){ return t + ' Next Match ' + m + ' ' + y + ': Preview, Team News and How to Watch'; }, keywords: function(t){ return [t + ' next match', t + ' preview', 'watch ' + t + ' live']; } },
+      { id:'season',   label:'Season Update',  category:'Season Analysis',  title: function(t,m,y){ return t + ' Season So Far ' + m + ' ' + y + ': Form, Key Players and What to Expect'; }, keywords: function(t){ return [t + ' season ' + YEAR, t + ' form guide']; } },
+      { id:'fixtures', label:'Fixtures',       category:'Fixture Analysis', title: function(t,m,y){ return t + ' Next Four Fixtures ' + m + ' ' + y + ': Previews, Challenges and Predictions'; }, keywords: function(t){ return [t + ' fixtures', t + ' next matches', t + ' fixture list ' + YEAR]; } },
+      { id:'review',   label:'Match Review',  category:'Match Reports',    title: function(t,m,y){ return t + ' Match Report ' + m + ' ' + y + ': Result, Player Ratings and Key Talking Points'; }, keywords: function(t){ return [t + ' match report', t + ' result', t + ' player ratings']; } }
+    ],
+    entityGroups: [
+      { group: '\u2B50 Featured', items: ['Premier League', 'England National Team'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67\uDB40\uDC7F Premier League', items: ['Arsenal','Aston Villa','Bournemouth','Brentford','Brighton','Chelsea','Crystal Palace','Everton','Fulham','Ipswich','Leicester City','Liverpool','Manchester City','Manchester United','Newcastle United','Nottingham Forest','Southampton','Tottenham','West Ham United','Wolves'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67\uDB40\uDC7F Championship', items: ['Blackburn Rovers','Bristol City','Burnley','Cardiff City','Coventry City','Derby County','Hull City','Leeds United','Luton Town','Middlesbrough','Millwall','Norwich City','Oxford United','Plymouth Argyle','Portsmouth','Preston North End','Queens Park Rangers','Sheffield United','Sheffield Wednesday','Stoke City','Sunderland','Swansea City','Watford','West Bromwich Albion'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67\uDB40\uDC7F League One', items: ['Birmingham City','Blackpool','Bolton Wanderers','Bristol Rovers','Burton Albion','Cambridge United','Charlton Athletic','Exeter City','Huddersfield Town','Leyton Orient','Lincoln City','Mansfield Town','Northampton Town','Peterborough United','Reading','Rotherham United','Shrewsbury Town','Stevenage','Stockport County','Wigan Athletic','Wycombe Wanderers'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67\uDB40\uDC7F League Two', items: ['Accrington Stanley','AFC Wimbledon','Barrow','Bradford City','Carlisle United','Cheltenham Town','Colchester United','Crawley Town','Crewe Alexandra','Doncaster Rovers','Fleetwood Town','Gillingham','Grimsby Town','Harrogate Town','Milton Keynes Dons','Morecambe','Newport County','Notts County','Port Vale','Salford City','Swindon Town','Tranmere Rovers','Walsall','Wrexham','York City'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F Scottish Premiership', items: ['Aberdeen','Celtic','Dundee','Dundee United','Heart of Midlothian','Hibernian','Kilmarnock','Livingston','Motherwell','Rangers','Ross County','St Johnstone','St Mirren'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F Scottish Championship & League One', items: ['Ayr United','Dunfermline Athletic','Falkirk','Hamilton Academical','Inverness CT','Partick Thistle','Queen of the South','Raith Rovers','Airdrieonians','Alloa Athletic','Arbroath','Dumbarton','East Fife','Montrose','Peterhead','Stirling Albion'] },
+      { group: '\uD83C\uDFF4\uDB40\uDC67\uDB40\uDC62\uDB40\uDC77\uDB40\uDC6C\uDB40\uDC73\uDB40\uDC7F Welsh Premier League', items: ['Bala Town','Barry Town United','Caernarfon Town','Cardiff Metropolitan','Connah\'s Quay Nomads','Flint Town United','Haverfordwest County','Newtown AFC','Penybont','The New Saints','Wrexham'] },
+      { group: '\uD83C\uDDEE\uD83C\uDDEA League of Ireland', items: ['Bohemian FC','Cork City','Derry City','Drogheda United','Dundalk','Galway United','Shamrock Rovers','Shelbourne','Sligo Rovers','St Patrick\'s Athletic'] },
+      { group: '\uD83C\uDDEC\uD83C\uDDE7\uD83C\uDDEE\uD83C\uDDEA Home Nations & Ireland', items: ['England','Scotland','Wales','Northern Ireland','Republic of Ireland'] },
+      { group: '\uD83C\uDF0D UEFA \u2014 Europe', items: ['Albania','Andorra','Armenia','Austria','Azerbaijan','Belarus','Belgium','Bosnia and Herzegovina','Bulgaria','Croatia','Cyprus','Czech Republic','Denmark','Estonia','Faroe Islands','Finland','France','Georgia','Germany','Gibraltar','Greece','Hungary','Iceland','Israel','Italy','Kazakhstan','Kosovo','Latvia','Liechtenstein','Lithuania','Luxembourg','Malta','Moldova','Montenegro','Netherlands','North Macedonia','Norway','Poland','Portugal','Romania','Russia','San Marino','Serbia','Slovakia','Slovenia','Spain','Sweden','Switzerland','Turkey','Ukraine'] },
+      { group: '\uD83C\uDF0E CONMEBOL \u2014 South America', items: ['Argentina','Bolivia','Brazil','Chile','Colombia','Ecuador','Paraguay','Peru','Uruguay','Venezuela'] },
+      { group: '\uD83C\uDF0E CONCACAF \u2014 North & Central America', items: ['Canada','Costa Rica','Cuba','El Salvador','Guatemala','Haiti','Honduras','Jamaica','Mexico','Panama','Trinidad and Tobago','United States'] },
+      { group: '\uD83C\uDF0D CAF \u2014 Africa', items: ['Algeria','Cameroon','C\u00F4te d\'Ivoire','DR Congo','Egypt','Ethiopia','Ghana','Kenya','Mali','Morocco','Nigeria','Senegal','South Africa','Tanzania','Tunisia','Uganda','Zambia','Zimbabwe'] },
+      { group: '\uD83C\uDF0F AFC \u2014 Asia', items: ['Australia','Bahrain','China','India','Indonesia','Iran','Iraq','Japan','Jordan','Kuwait','Malaysia','Oman','Palestine','Qatar','Saudi Arabia','South Korea','Syria','Thailand','UAE','Uzbekistan','Vietnam'] },
+      { group: '\uD83C\uDF0A OFC \u2014 Oceania', items: ['Fiji','New Caledonia','New Zealand','Papua New Guinea','Solomon Islands','Tahiti','Vanuatu'] }
+    ],
+    entityLabel: 'Team / Subject'
+  },
+
+  darts: {
+    id: 'darts', icon: '\uD83C\uDFAF', label: 'Darts',
+    siteUrl: 'https://whatchan.co.uk/darts',
+    subtitle: 'Generate unique, SEO-optimised darts articles with AI',
+    rssSources: ['bbc','sky','pdc'],
+    srcLabels: { bbc:'BBC Sport', sky:'Sky Sports', pdc:'PDC' },
+    categories: ['Tournament Previews','Player Profiles','Rankings Analysis','Results & Reaction','How to Watch','Fan Features','Stats & Records'],
+    systemPromptExtra: 'You are an expert darts journalist. Your writing style is authoritative yet accessible, bringing the oche to life.\n'
+      + 'Use darts-specific terminology: checkout, treble 20, nine-darter, average, leg, set, double top, bull finish.\n',
+    evergreen: [
+      { slug:'pdc-world-champ',      title:'PDC World Darts Championship ' + YEAR + '/' + NEXT_YR + ': Draw, Results, Favourites & How to Watch', category:'Tournament Previews', keywords:['PDC World Darts Championship','darts world championship','Alexandra Palace darts'] },
+      { slug:'premier-league-darts', title:'Premier League Darts ' + YEAR + ': Table, Results, Fixtures & How to Watch',                          category:'Tournament Previews', keywords:['Premier League Darts','PL Darts table','Premier League Darts results'] },
+      { slug:'darts-rankings',       title:'PDC Order of Merit ' + YEAR + ': Latest Rankings, Movers and Who\'s Rising',                          category:'Rankings Analysis',   keywords:['PDC Order of Merit','darts world rankings','PDC rankings'] },
+      { slug:'darts-averages',       title:'Highest Darts Averages ' + YEAR + ': Who\'s Hitting the Best Numbers?',                               category:'Stats & Records',     keywords:['highest darts averages','best darts players','darts statistics'] },
+      { slug:'watch-darts-uk',       title:'How to Watch Darts on TV in the UK ' + YEAR + ': Every Channel and Stream',                           category:'How to Watch',        keywords:['watch darts UK','darts on TV','Sky Sports darts'] },
+      { slug:'nine-dart-finishes',   title:'Nine-Dart Finishes ' + YEAR + ': Every Perfect Leg This Year',                                        category:'Stats & Records',     keywords:['nine dart finish','nine darter','perfect leg darts'] }
+    ],
+    topicalTemplates: [
+      { id:'tournament', label:'Tournament Preview', category:'Tournament Previews', title: function(t,m,y){ return t + ' Darts Preview ' + m + ' ' + y + ': Draw, Odds, Predictions & How to Watch'; }, keywords: function(t){ return [t + ' darts', t + ' preview', t + ' draw']; } },
+      { id:'result',     label:'Result & Reaction',  category:'Results & Reaction',  title: function(t,m,y){ return t + ' Result ' + m + ' ' + y + ': Scoreline, Reaction and What It Means'; }, keywords: function(t){ return [t + ' result', t + ' darts result', t + ' reaction']; } },
+      { id:'profile',    label:'Player Profile',     category:'Player Profiles',     title: function(t,m,y){ return t + ' ' + y + ': Career Stats, Form, Ranking and What\'s Next'; }, keywords: function(t){ return [t + ' darts', t + ' stats', t + ' ranking']; } },
+      { id:'ranking',    label:'Rankings Update',    category:'Rankings Analysis',   title: function(t,m,y){ return 'PDC Rankings Update ' + m + ' ' + y + ': ' + t + ' and the Latest Movers'; }, keywords: function(t){ return ['PDC rankings', t + ' ranking', 'darts Order of Merit']; } }
+    ],
+    entityGroups: [
+      { group: 'Top Players', items: ['Luke Humphries','Luke Littler','Michael van Gerwen','Gerwyn Price','Rob Cross','Michael Smith','Peter Wright','Gary Anderson','Dave Chisnall','Jonny Clayton','Nathan Aspinall','Danny Noppert','Damon Heta','Chris Dobey','Josh Rock'] },
+      { group: 'Tournaments', items: ['PDC World Championship','Premier League Darts','World Matchplay','World Grand Prix','Grand Slam of Darts','UK Open','Players Championship Finals','World Series of Darts','European Championship','Masters'] }
+    ],
+    entityLabel: 'Player / Tournament'
+  },
+
+  boxing: {
+    id: 'boxing', icon: '\uD83E\uDD4A', label: 'Boxing',
+    siteUrl: 'https://whatchan.co.uk/boxing',
+    subtitle: 'Generate unique, SEO-optimised boxing articles with AI',
+    rssSources: ['bbc','sky','guardian'],
+    srcLabels: { bbc:'BBC Sport', sky:'Sky Sports', guardian:'Guardian' },
+    categories: ['Fight Previews','Fight Results','Fighter Profiles','Rankings & Belts','How to Watch','Pound for Pound','Division Analysis'],
+    systemPromptExtra: 'You are an expert boxing journalist. Your writing captures the drama and technical skill of the sport.\n'
+      + 'Use boxing terminology: jab, cross, uppercut, body shot, round, TKO, KO, split decision, unanimous decision, undercard, pound-for-pound.\n',
+    evergreen: [
+      { slug:'p4p-rankings',       title:'Boxing Pound for Pound Rankings ' + YEAR + ': The Best Fighters in the World Right Now',   category:'Pound for Pound',   keywords:['pound for pound boxing','best boxers in the world','P4P rankings'] },
+      { slug:'heavyweight-division',title:'Heavyweight Boxing ' + YEAR + ': Champion, Rankings, Upcoming Fights & Who\'s Next',      category:'Division Analysis',  keywords:['heavyweight boxing','heavyweight champion','heavyweight rankings'] },
+      { slug:'boxing-schedule',     title:'Boxing Schedule ' + YEAR + ': Every Major Fight, Date, Venue & How to Watch',             category:'How to Watch',       keywords:['boxing schedule','upcoming boxing fights','boxing on TV UK'] },
+      { slug:'watch-boxing-uk',     title:'How to Watch Boxing in the UK ' + YEAR + ': Every Channel, Stream & PPV Option',          category:'How to Watch',       keywords:['watch boxing UK','boxing on TV','DAZN Sky Sports boxing'] },
+      { slug:'british-boxing',      title:'British Boxing Stars ' + YEAR + ': Who\'s Fighting, Who\'s Rising and Who\'s Retiring',   category:'Fighter Profiles',   keywords:['British boxing','UK boxers','British world champions'] }
+    ],
+    topicalTemplates: [
+      { id:'preview',  label:'Fight Preview',  category:'Fight Previews',  title: function(t,m,y){ return t + ' Fight Preview: Date, Odds, Undercard & How to Watch \u2014 ' + m + ' ' + y; }, keywords: function(t){ return [t + ' fight', t + ' preview', t + ' odds']; } },
+      { id:'result',   label:'Fight Result',   category:'Fight Results',   title: function(t,m,y){ return t + ' Fight Result ' + m + ' ' + y + ': Scorecard, Highlights & What\'s Next'; }, keywords: function(t){ return [t + ' result', t + ' fight result', t + ' scorecard']; } },
+      { id:'profile',  label:'Fighter Profile',category:'Fighter Profiles',title: function(t,m,y){ return t + ' ' + y + ': Record, Style, Next Fight & Career Analysis'; }, keywords: function(t){ return [t + ' boxing', t + ' record', t + ' next fight']; } },
+      { id:'division', label:'Division Update', category:'Division Analysis',title: function(t,m,y){ return t + ' Division Update ' + m + ' ' + y + ': Champion, Rankings & Upcoming Bouts'; }, keywords: function(t){ return [t + ' boxing', t + ' champion', t + ' rankings']; } }
+    ],
+    entityGroups: [
+      { group: 'Heavyweight', items: ['Oleksandr Usyk','Tyson Fury','Anthony Joshua','Daniel Dubois','Zhilei Zhang','Deontay Wilder','Joseph Parker','Filip Hrgovic'] },
+      { group: 'Other Divisions', items: ['Canelo Alvarez','Dmitry Bivol','Terence Crawford','Naoya Inoue','Gervonta Davis','Ryan Garcia','Shakur Stevenson','Devin Haney','Artur Beterbiev','Ben Whittaker'] },
+      { group: 'Weight Classes', items: ['Heavyweight','Cruiserweight','Light Heavyweight','Super Middleweight','Middleweight','Super Welterweight','Welterweight','Super Lightweight','Lightweight','Super Featherweight','Featherweight','Super Bantamweight','Bantamweight','Flyweight'] }
+    ],
+    entityLabel: 'Fighter / Division'
+  },
+
+  snooker: {
+    id: 'snooker', icon: '\uD83C\uDFB1', label: 'Snooker',
+    siteUrl: 'https://whatchan.co.uk/snooker',
+    subtitle: 'Generate unique, SEO-optimised snooker articles with AI',
+    rssSources: ['bbc','eurosport'],
+    srcLabels: { bbc:'BBC Sport', eurosport:'Eurosport' },
+    categories: ['Tournament Previews','Results & Reaction','Player Profiles','Rankings Analysis','How to Watch','Stats & Records','Season Review'],
+    systemPromptExtra: 'You are an expert snooker journalist. Your writing captures the precision and drama of the baize.\n'
+      + 'Use snooker terminology: century break, maximum 147, frame, safety play, long pot, positional play, the Crucible.\n',
+    evergreen: [
+      { slug:'world-champ-snooker',  title:'World Snooker Championship ' + YEAR + ': Draw, Results, Schedule & How to Watch',  category:'Tournament Previews', keywords:['World Snooker Championship','Crucible snooker','snooker world championship'] },
+      { slug:'snooker-rankings',     title:'World Snooker Rankings ' + YEAR + ': Latest Standings, Movers & Season Points',    category:'Rankings Analysis',   keywords:['snooker world rankings','snooker rankings','world snooker tour'] },
+      { slug:'snooker-centuries',    title:'Most Century Breaks ' + YEAR + ': Who\'s Leading the Season Stats?',               category:'Stats & Records',     keywords:['snooker century breaks','most centuries snooker','snooker statistics'] },
+      { slug:'watch-snooker-uk',     title:'How to Watch Snooker on TV in the UK ' + YEAR,                                     category:'How to Watch',        keywords:['watch snooker UK','snooker on TV','BBC snooker Eurosport'] },
+      { slug:'snooker-147s',         title:'Maximum 147 Breaks ' + YEAR + ': Every Perfect Frame This Season',                 category:'Stats & Records',     keywords:['147 break snooker','maximum break','snooker 147'] }
+    ],
+    topicalTemplates: [
+      { id:'tournament', label:'Tournament Preview', category:'Tournament Previews', title: function(t,m,y){ return t + ' ' + y + ': Draw, Schedule, Odds & How to Watch'; }, keywords: function(t){ return [t + ' snooker', t + ' draw', t + ' results']; } },
+      { id:'result',     label:'Match Result',       category:'Results & Reaction',  title: function(t,m,y){ return t + ' Snooker Result ' + m + ' ' + y + ': Scoreline, Breaks & Reaction'; }, keywords: function(t){ return [t + ' result', t + ' snooker', t + ' score']; } },
+      { id:'profile',    label:'Player Profile',     category:'Player Profiles',     title: function(t,m,y){ return t + ' ' + y + ': Ranking, Record, Form & Career Highlights'; }, keywords: function(t){ return [t + ' snooker', t + ' ranking', t + ' career']; } }
+    ],
+    entityGroups: [
+      { group: 'Top Players', items: ['Ronnie O\'Sullivan','Judd Trump','Mark Allen','Mark Selby','Neil Robertson','John Higgins','Shaun Murphy','Kyren Wilson','Luca Brecel','Mark Williams','Ding Junhui','Jack Lisowski','Zhao Xintong','Si Jiahui'] },
+      { group: 'Tournaments', items: ['World Championship','UK Championship','Masters','Champion of Champions','Tour Championship','British Open','English Open','Northern Ireland Open','Scottish Open','Welsh Open','German Masters','World Grand Prix'] }
+    ],
+    entityLabel: 'Player / Tournament'
+  },
+
+  f1: {
+    id: 'f1', icon: '\uD83C\uDFCE\uFE0F', label: 'Formula 1',
+    siteUrl: 'https://whatchan.co.uk/f1',
+    subtitle: 'Generate unique, SEO-optimised Formula 1 articles with AI',
+    rssSources: ['bbc','sky','guardian','autosport'],
+    srcLabels: { bbc:'BBC Sport', sky:'Sky Sports', guardian:'Guardian', autosport:'Autosport' },
+    categories: ['Race Previews','Race Reports','Driver Profiles','Team Analysis','How to Watch','Championship Standings','Technical Analysis','Regulation Changes'],
+    systemPromptExtra: 'You are an expert Formula 1 journalist. Your writing blends technical insight with racing drama.\n'
+      + 'Use F1 terminology: DRS, undercut, overcut, tyre degradation, qualifying, grid penalty, safety car, pit strategy, downforce, aero package.\n',
+    evergreen: [
+      { slug:'f1-standings',       title:'F1 Standings ' + YEAR + ': Drivers\' and Constructors\' Championship After Every Race',   category:'Championship Standings', keywords:['F1 standings','F1 championship','drivers championship'] },
+      { slug:'f1-calendar',        title:'F1 Calendar ' + YEAR + ': Every Race Date, Circuit, Start Time & How to Watch',           category:'How to Watch',           keywords:['F1 calendar','F1 schedule','Formula 1 races'] },
+      { slug:'f1-driver-ratings',  title:'F1 Driver Ratings ' + YEAR + ': Every Driver Ranked After Each Race Weekend',             category:'Driver Profiles',        keywords:['F1 driver ratings','best F1 drivers','Formula 1 ratings'] },
+      { slug:'watch-f1-uk',        title:'How to Watch F1 in the UK ' + YEAR + ': Sky, Channel 4, Streaming & Schedules',           category:'How to Watch',           keywords:['watch F1 UK','F1 on TV','Sky Sports F1'] },
+      { slug:'f1-team-budgets',    title:'F1 Team Budgets and Spending ' + YEAR + ': Cost Cap, Upgrades & Who\'s Spending What',    category:'Team Analysis',          keywords:['F1 budget cap','F1 team budgets','cost cap Formula 1'] }
+    ],
+    topicalTemplates: [
+      { id:'preview',  label:'Race Preview',   category:'Race Previews',  title: function(t,m,y){ return t + ' Grand Prix ' + y + ' Preview: Start Time, Grid, Weather & Predictions'; }, keywords: function(t){ return [t + ' Grand Prix', t + ' GP preview', t + ' F1']; } },
+      { id:'report',   label:'Race Report',    category:'Race Reports',   title: function(t,m,y){ return t + ' Grand Prix ' + y + ' Result: Race Report, Highlights & Championship Impact'; }, keywords: function(t){ return [t + ' GP result', t + ' Grand Prix report', t + ' F1 result']; } },
+      { id:'driver',   label:'Driver Profile', category:'Driver Profiles',title: function(t,m,y){ return t + ' ' + y + ': Stats, Contract, Team and Career So Far'; }, keywords: function(t){ return [t + ' F1', t + ' career', t + ' stats']; } },
+      { id:'team',     label:'Team Analysis',  category:'Team Analysis',  title: function(t,m,y){ return t + ' F1 ' + y + ': Car Performance, Upgrades and Season Outlook'; }, keywords: function(t){ return [t + ' F1 team', t + ' car', t + ' season']; } }
+    ],
+    entityGroups: [
+      { group: 'Drivers', items: ['Max Verstappen','Lando Norris','Charles Leclerc','Lewis Hamilton','Carlos Sainz','Oscar Piastri','George Russell','Fernando Alonso','Pierre Gasly','Esteban Ocon','Yuki Tsunoda','Lance Stroll','Alex Albon','Daniel Ricciardo','Valtteri Bottas','Zhou Guanyu','Kevin Magnussen','Nico Hulkenberg','Logan Sargeant','Oliver Bearman'] },
+      { group: 'Teams', items: ['Red Bull Racing','McLaren','Ferrari','Mercedes','Aston Martin','Alpine','RB (VCARB)','Williams','Sauber','Haas'] },
+      { group: 'Circuits', items: ['Bahrain','Saudi Arabia','Australia','Japan','China','Miami','Emilia Romagna','Monaco','Canada','Spain','Austria','Great Britain','Hungary','Belgium','Netherlands','Italy','Azerbaijan','Singapore','United States','Mexico','Brazil','Las Vegas','Qatar','Abu Dhabi'] }
+    ],
+    entityLabel: 'Driver / Team / Circuit'
+  },
+
+  rugby: {
+    id: 'rugby', icon: '\uD83C\uDFC9', label: 'Rugby',
+    siteUrl: 'https://whatchan.co.uk/rugby',
+    subtitle: 'Generate unique, SEO-optimised rugby articles with AI',
+    rssSources: ['bbc','sky','guardian'],
+    srcLabels: { bbc:'BBC Sport', sky:'Sky Sports', guardian:'Guardian' },
+    categories: ['Match Previews','Match Reports','Player Profiles','Six Nations','Premiership','How to Watch','Rankings & Standings','Team Analysis'],
+    systemPromptExtra: 'You are an expert rugby union journalist. Your writing brings the physicality and strategy of rugby to life.\n'
+      + 'Use rugby terminology: scrum, lineout, ruck, maul, try, conversion, penalty, breakdown, set piece, gainline, jackal, offload.\n',
+    evergreen: [
+      { slug:'six-nations',        title:'Six Nations ' + YEAR + ': Table, Results, Fixtures & How to Watch Every Game',         category:'Six Nations',        keywords:['Six Nations','Six Nations table','Six Nations results'] },
+      { slug:'premiership-rugby',  title:'Premiership Rugby ' + YEAR + '/' + NEXT_YR + ': Table, Results and Season Guide',      category:'Premiership',        keywords:['Premiership Rugby','rugby Premiership table','Premiership results'] },
+      { slug:'world-rankings',     title:'World Rugby Rankings ' + YEAR + ': Latest Standings After Every Test Window',           category:'Rankings & Standings',keywords:['world rugby rankings','rugby rankings','best rugby teams'] },
+      { slug:'watch-rugby-uk',     title:'How to Watch Rugby in the UK ' + YEAR + ': TV Channels, Streams & Schedules',          category:'How to Watch',       keywords:['watch rugby UK','rugby on TV','rugby streaming'] },
+      { slug:'lions-tour',         title:'British & Irish Lions ' + YEAR + ': Squad, Schedule, Tickets & Everything You Need',   category:'Team Analysis',      keywords:['British Irish Lions','Lions tour','Lions rugby'] }
+    ],
+    topicalTemplates: [
+      { id:'preview',  label:'Match Preview',  category:'Match Previews', title: function(t,m,y){ return t + ' Rugby Preview ' + m + ' ' + y + ': Team News, Odds & How to Watch'; }, keywords: function(t){ return [t + ' rugby', t + ' preview', t + ' team news']; } },
+      { id:'report',   label:'Match Report',   category:'Match Reports',  title: function(t,m,y){ return t + ' Rugby Result ' + m + ' ' + y + ': Score, Tries, Highlights & Reaction'; }, keywords: function(t){ return [t + ' rugby result', t + ' score', t + ' highlights']; } },
+      { id:'profile',  label:'Player Profile', category:'Player Profiles',title: function(t,m,y){ return t + ' ' + y + ': Caps, Stats, Position and Career Highlights'; }, keywords: function(t){ return [t + ' rugby', t + ' caps', t + ' career']; } },
+      { id:'team',     label:'Team Analysis',  category:'Team Analysis',  title: function(t,m,y){ return t + ' Rugby ' + y + ': Form, Squad Depth and Season Outlook'; }, keywords: function(t){ return [t + ' rugby team', t + ' squad', t + ' form']; } }
+    ],
+    entityGroups: [
+      { group: 'Six Nations', items: ['England','France','Ireland','Scotland','Wales','Italy'] },
+      { group: 'Southern Hemisphere', items: ['New Zealand','South Africa','Australia','Argentina','Fiji','Samoa','Tonga'] },
+      { group: 'Premiership', items: ['Bath','Bristol Bears','Exeter Chiefs','Gloucester','Harlequins','Leicester Tigers','London Irish','Newcastle Falcons','Northampton Saints','Sale Sharks','Saracens','Worcester Warriors'] }
+    ],
+    entityLabel: 'Team / Player'
+  },
+
+  other: {
+    id: 'other', icon: '\uD83C\uDFC6', label: 'Other',
+    siteUrl: 'https://whatchan.co.uk',
+    subtitle: 'Generate unique, SEO-optimised sports articles with AI',
+    rssSources: ['bbc'],
+    srcLabels: { bbc: 'BBC Sport' },
+    categories: ['General','News','Features','How to Watch','Analysis','Opinion','Profiles','Stats & Records'],
+    systemPromptExtra: 'You are an expert sports journalist covering a range of sports.\n'
+      + 'Adapt your terminology and tone to whichever sport the article covers.\n',
+    evergreen: [],
+    topicalTemplates: [
+      { id:'news',    label:'News Story',    category:'News',     title: function(t,m,y){ return t + ': Latest News, Updates and What It Means \u2014 ' + m + ' ' + y; }, keywords: function(t){ return [t + ' news', t + ' latest', t + ' update']; } },
+      { id:'feature', label:'Feature',       category:'Features', title: function(t,m,y){ return t + ' ' + y + ': The Full Story, Analysis and What to Watch'; }, keywords: function(t){ return [t, t + ' feature', t + ' analysis']; } },
+      { id:'profile', label:'Profile',       category:'Profiles', title: function(t,m,y){ return t + ' ' + y + ': Career, Stats and What\'s Next'; }, keywords: function(t){ return [t, t + ' career', t + ' stats']; } }
+    ],
+    entityGroups: [
+      { group: 'Enter manually', items: ['Custom Topic'] }
+    ],
+    entityLabel: 'Subject'
+  }
+};
+
+var SPORT_ORDER = ['football','darts','boxing','snooker','f1','rugby','other'];
+var ACTIVE_SPORT = 'football';
+
+// Derived from active sport — updated on sport switch
+function getSiteUrl() { return SPORTS[ACTIVE_SPORT].siteUrl; }
+var SITE_URL = getSiteUrl(); // initial value, refreshed on sport switch
+var EVERGREEN = SPORTS[ACTIVE_SPORT].evergreen;
+var TOPICAL_TMPLS = SPORTS[ACTIVE_SPORT].topicalTemplates;
+var TEAM_GROUPS = SPORTS[ACTIVE_SPORT].entityGroups;
+
+var CAT_COLORS = {
+  'Season Analysis':['#fef3c7','#92400e'], 'Transfer News':['#d1fae5','#065f46'],
+  'Injury Updates':['#fee2e2','#991b1b'], 'Competition Guides':['#dbeafe','#1e40af'],
+  'Broadcaster Guides':['#ede9fe','#5b21b6'], 'Team Guides':['#fce7f3','#9d174d'],
+  'Manager Features':['#f0fdf4','#166534'], 'Player Features':['#fff7ed','#9a3412'],
+  'Match Previews':['#f0f9ff','#0369a1'], 'Match Reports':['#dbeafe','#1e3a5f'], 'Club News':['#fdf4ff','#7e22ce'],
+  'Awards':['#fffbeb','#b45309'], 'Fan Features':['#ecfdf5','#064e3b'],
+  'Fixture Analysis':['#fef9c3','#713f12'],
+  'Tournament Previews':['#dbeafe','#1e40af'], 'Results & Reaction':['#d1fae5','#065f46'],
+  'Rankings Analysis':['#fef3c7','#92400e'], 'Stats & Records':['#fff7ed','#9a3412'],
+  'How to Watch':['#ede9fe','#5b21b6'], 'Player Profiles':['#fce7f3','#9d174d'],
+  'Fight Previews':['#fee2e2','#991b1b'], 'Fight Results':['#d1fae5','#065f46'],
+  'Fighter Profiles':['#fce7f3','#9d174d'], 'Division Analysis':['#fef3c7','#92400e'],
+  'Rankings & Belts':['#fff7ed','#9a3412'], 'Pound for Pound':['#fffbeb','#b45309'],
+  'Race Previews':['#fee2e2','#991b1b'], 'Race Reports':['#d1fae5','#065f46'],
+  'Driver Profiles':['#fce7f3','#9d174d'], 'Team Analysis':['#dbeafe','#1e40af'],
+  'Championship Standings':['#fef3c7','#92400e'], 'Technical Analysis':['#f0f9ff','#0369a1'],
+  'Regulation Changes':['#ecfdf5','#064e3b'],
+  'Six Nations':['#d1fae5','#065f46'], 'Premiership':['#dbeafe','#1e40af'],
+  'Rankings & Standings':['#fef3c7','#92400e'], 'Season Review':['#fff7ed','#9a3412']
+};
+function catCol(cat) { return CAT_COLORS[cat] || ['#f1f5f9','#475569']; }
+
+function getSrcLabels() { return SPORTS[ACTIVE_SPORT].srcLabels; }
+var SRC_LABELS = getSrcLabels();
+
+// ═══════════════════════════════════════════════════════════════
+//  ARTICLE OUTPUT CSS
+// ═══════════════════════════════════════════════════════════════
+// Full WhatChan article CSS
+var ART_CSS = '<style>'
+  + '.wc-post{max-width:780px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1c1917;line-height:1.75;font-size:18px}'
+  + '.wc-post h2{font-size:28px;line-height:1.25;margin:44px 0 14px;color:#1c1917;position:relative;padding-left:18px;font-weight:700}'
+  + '.wc-post h2::before{content:\'\';position:absolute;left:0;top:4px;bottom:4px;width:4px;border-radius:2px;background:#f59e0b}'
+  + '.wc-post p{margin-bottom:20px}'
+  + '.wc-pullquote{margin:36px 0;padding:24px 28px;border-left:4px solid #f59e0b;background:linear-gradient(90deg,rgba(245,158,11,.06) 0%,transparent 100%);border-radius:0 10px 10px 0;font-size:20px;font-style:italic;line-height:1.5;color:#1c1917}'
+  + '.wc-pullquote cite{display:block;margin-top:10px;font-size:14px;font-style:normal;color:#78716c;font-weight:600}'
+  + '.wc-stats-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:36px 0}'
+  + '.wc-stat-card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:18px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.04)}'
+  + '.wc-stat-num{font-family:"Courier New",monospace;font-size:30px;font-weight:700;color:#1d4ed8;line-height:1;margin-bottom:4px}'
+  + '.wc-stat-label{font-size:12px;color:#78716c;font-weight:600;text-transform:uppercase;letter-spacing:.8px}'
+  + '.wc-editors-note{margin:36px 0;padding:22px 26px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #1d4ed8;border-radius:0 10px 10px 0}'
+  + '.wc-editors-note-label{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:#1d4ed8;margin-bottom:8px}'
+  + '.wc-editors-note p{font-size:15px;line-height:1.65;color:#78716c;margin:0}'
+  + '.wc-tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:36px;padding-top:36px;border-top:1px solid #e7e5e4}'
+  + '.wc-tag{display:inline-block;background:#f5f5f4;color:#78716c;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;border:1px solid #e7e5e4;text-decoration:none;transition:background .2s,color .2s}'
+  + '.wc-tag:hover{background:#1d4ed8;color:#fff;border-color:#1d4ed8}'
+  + '.wc-sources{font-size:14px;color:#78716c;font-style:italic;margin-top:28px}'
+  + '@media(max-width:600px){.wc-post h2{font-size:23px}.wc-pullquote{font-size:18px;padding:20px}}'
+  + '</style>';
+
+// Banner CSS (shared across all banners)
+var BANNER_CSS = '<style>'
+  + '.wc-banner{position:relative;overflow:hidden;max-width:1000px;margin:28px auto;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}'
+  + '.wc-banner .wc-bn-glow{position:absolute;top:-40%;right:-10%;width:320px;height:320px;pointer-events:none}'
+  + '.wc-banner .wc-bn-content{position:relative;display:flex;align-items:center;gap:20px;padding:24px 28px;flex-wrap:wrap}'
+  + '.wc-banner .wc-bn-icon{font-size:38px;line-height:1;flex-shrink:0;filter:drop-shadow(0 2px 6px rgba(0,0,0,.3))}'
+  + '.wc-banner .wc-bn-text{flex:1 1 280px;min-width:0}'
+  + '.wc-banner .wc-bn-label{font-size:11px;font-weight:700;letter-spacing:1.8px;margin-bottom:4px;text-transform:uppercase}'
+  + '.wc-banner .wc-bn-title{font-size:20px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:3px}'
+  + '.wc-banner .wc-bn-sub{font-size:14px;color:rgba(255,255,255,.7);line-height:1.4}'
+  + '.wc-banner .wc-bn-btn{flex-shrink:0;display:inline-block;padding:12px 26px;background:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;transition:transform .2s,box-shadow .2s;box-shadow:0 2px 10px rgba(0,0,0,.2)}'
+  + '.wc-banner .wc-bn-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.3)}'
+  + '@media(max-width:600px){.wc-banner .wc-bn-content{flex-direction:column;text-align:center;padding:20px}.wc-banner .wc-bn-btn{width:100%;text-align:center}}'
+  + '</style>';
+
+// Sport-specific banner data
+var SPORT_BANNERS = {
+  football: { icon: '&#128250;', label: 'FOOTBALL ON TODAY', title: "What Football is on TV Today?", sub: 'Live games, kick-off times, TV channels &amp; streaming &mdash; updated daily.', btnText: "See Today's Games", url: 'https://whatchan.co.uk/today/', bg: 'linear-gradient(135deg,#064e3b 0%,#065f46 40%,#047857 100%)', shadow: 'rgba(4,120,87,.3)', accentColor: '#6ee7b7', btnColor: '#064e3b', glowColor: 'rgba(52,211,153,.3)' },
+  darts:    { icon: '&#127919;', label: 'DARTS ON TODAY', title: "What Darts is on TV Today?", sub: 'Live darts, start times, TV channels &amp; streaming &mdash; updated daily.', btnText: "See Today's Darts", url: 'https://whatchan.co.uk/darts/', bg: 'linear-gradient(135deg,#7f1d1d 0%,#991b1b 40%,#b91c1c 100%)', shadow: 'rgba(153,27,27,.3)', accentColor: '#fca5a5', btnColor: '#7f1d1d', glowColor: 'rgba(252,165,165,.3)' },
+  boxing:   { icon: '&#129354;', label: 'BOXING ON TODAY', title: "What Boxing is on TV Today?", sub: 'Live boxing, fight cards, TV channels &amp; streaming &mdash; updated daily.', btnText: "See Today's Boxing", url: 'https://whatchan.co.uk/boxing/', bg: 'linear-gradient(135deg,#1a0a2e 0%,#3b1578 40%,#8b1a4a 100%)', shadow: 'rgba(139,26,74,.3)', accentColor: '#c084fc', btnColor: '#1a0a2e', glowColor: 'rgba(192,132,252,.3)' },
+  snooker:  { icon: '&#127921;', label: 'SNOOKER ON TODAY', title: "What Snooker is on TV Today?", sub: 'Live snooker, session times, TV channels &amp; streaming &mdash; updated daily.', btnText: "See Today's Snooker", url: 'https://whatchan.co.uk/snooker/', bg: 'linear-gradient(135deg,#14532d 0%,#166534 40%,#15803d 100%)', shadow: 'rgba(22,101,52,.3)', accentColor: '#86efac', btnColor: '#14532d', glowColor: 'rgba(134,239,172,.3)' },
+  f1:       { icon: '&#127950;', label: 'F1 ON TODAY', title: "What F1 is on TV Today?", sub: 'Live races, qualifying, practice, TV channels &amp; streaming &mdash; updated daily.', btnText: "See Today's F1", url: 'https://whatchan.co.uk/f1/', bg: 'linear-gradient(135deg,#7f1d1d 0%,#991b1b 40%,#dc2626 100%)', shadow: 'rgba(220,38,38,.3)', accentColor: '#fca5a5', btnColor: '#7f1d1d', glowColor: 'rgba(252,165,165,.3)' },
+  rugby:    { icon: '&#127945;', label: 'RUGBY ON TODAY', title: "What Rugby is on TV Today?", sub: 'Live rugby, kick-off times, TV channels &amp; streaming &mdash; updated daily.', btnText: "See Today's Rugby", url: 'https://whatchan.co.uk/rugby/', bg: 'linear-gradient(135deg,#064e3b 0%,#065f46 40%,#047857 100%)', shadow: 'rgba(4,120,87,.3)', accentColor: '#6ee7b7', btnColor: '#064e3b', glowColor: 'rgba(52,211,153,.3)' },
+  other:    { icon: '&#127760;', label: 'WHATCHAN', title: "What Sport is on TV Today?", sub: 'Live sport, start times, TV channels &amp; streaming for every sport &mdash; updated daily.', btnText: "Visit WhatChan", url: 'https://whatchan.co.uk/', bg: 'linear-gradient(135deg,#1e3a8a 0%,#1e40af 40%,#2563eb 100%)', shadow: 'rgba(37,99,235,.3)', accentColor: '#93c5fd', btnColor: '#1e3a8a', glowColor: 'rgba(147,197,253,.3)' }
+};
+
+// Blog banner (always the same)
+var BLOG_BANNER = { icon: '&#128240;', label: 'NEW FROM WHATCHAN', title: 'Read the Latest on the WhatChan Blog', sub: 'TV news, schedule changes, channel updates &amp; more: all in one place.', btnText: 'Visit the Blog', url: 'https://whatchan.co.uk/whatchan-blog-posts', bg: 'linear-gradient(135deg,#0f2027 0%,#1a3a4a 40%,#1d4ed8 100%)', shadow: 'rgba(29,78,216,.25)', accentColor: '#60a5fa', btnColor: '#0f2027', glowColor: 'rgba(59,130,246,.35)' };
+
+function buildBannerHtml(b) {
+  return '<div class="wc-banner" style="background:' + b.bg + ';box-shadow:0 4px 24px ' + b.shadow + ',inset 0 1px 0 rgba(255,255,255,.08)">'
+    + '<div class="wc-bn-glow" style="background:radial-gradient(circle,' + b.glowColor + ' 0%,transparent 70%)"></div>'
+    + '<div class="wc-bn-content">'
+    + '<div class="wc-bn-icon">' + b.icon + '</div>'
+    + '<div class="wc-bn-text">'
+    + '<div class="wc-bn-label" style="color:' + b.accentColor + '">' + b.label + '</div>'
+    + '<div class="wc-bn-title">' + b.title + '</div>'
+    + '<div class="wc-bn-sub">' + b.sub + '</div>'
+    + '</div>'
+    + '<a href="' + b.url + '" class="wc-bn-btn" style="color:' + b.btnColor + '">' + b.btnText + '&nbsp;&rarr;</a>'
+    + '</div></div>';
+}
+
+// Helper: use a free model for non-critical work
+var FREE_MODEL = 'google/gemini-2.0-flash-exp';
+function callFreeLLM(systemPrompt, userPrompt, maxTokens) {
+  maxTokens = maxTokens || 1500;
+  return withTimeout(apiPost({
+    model: FREE_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    max_tokens: maxTokens
+  }).then(function(d) {
+    if (d.choices && d.choices[0] && d.choices[0].message) return d.choices[0].message.content;
+    throw new Error('Unexpected API response format');
+  }), 120000, 'callFreeLLM');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+var S = {
+  selected:       {},
+  batchSize:      1,
+  generating:     false,
+  generated:      [],
+  previewIdx:     -1,
+  copied:         -1,
+  articleLength:  'standard',
+  customWordCount: 1000,
+  feedItems:      [],
+  feedFilter:     'all',
+  selectedFeedIdx: -1,
+  urlSource:      null,    // { title, text, url }
+  uploadedContext: {},      // key -> { name, text }
+};
+
+var EST_SECS = { standard: 45, medium: 65, longform: 90 };
+function getEstSecs() {
+  if (S.articleLength === 'custom') return Math.round((S.customWordCount / 800) * 45);
+  return EST_SECS[S.articleLength] || 45;
+}
+function getTokenLimit() {
+  if (S.articleLength === 'custom') return Math.max(3500, Math.round(S.customWordCount * 2.2));
+  return getTokenLimit();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  API CALLS (OpenRouter via proxy)
+// ═══════════════════════════════════════════════════════════════
+function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+
+function apiPost(payload, _retryCount) {
+  _retryCount = _retryCount || 0;
+  var MAX_RETRIES = 3;
+  if (!PROXY_URL || PROXY_URL.indexOf('your-subdomain') >= 0) {
+    return Promise.reject(new Error('No proxy URL configured. Update the PROXY_URL variable at the top of this file with your Cloudflare Worker URL.'));
+  }
+  return fetch(PROXY_URL + '/api/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(res) {
+    if (res.status === 429 && _retryCount < MAX_RETRIES) {
+      var backoff = Math.pow(2, _retryCount) * 2000 + Math.random() * 1000;
+      addLog('Rate limited, retrying in ' + Math.round(backoff/1000) + 's...');
+      return delay(backoff).then(function(){ return apiPost(payload, _retryCount + 1); });
+    }
+    if (!res.ok) {
+      return res.json().catch(function(){ return {}; }).then(function(e) {
+        var msg = (e.error && e.error.message) ? e.error.message : 'API error ' + res.status;
+        throw new Error(msg);
+      });
+    }
+    return res.json();
+  });
+}
+
+function callLLM(systemPrompt, userPrompt, maxTokens) {
+  maxTokens = maxTokens || 3200;
+  var timeout = 180000;
+  return withTimeout(apiPost({
+    model: ACTIVE_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    max_tokens: maxTokens
+  }).then(function(d) {
+    // OpenRouter returns OpenAI-compatible format
+    if (d.choices && d.choices[0] && d.choices[0].message) {
+      return d.choices[0].message.content;
+    }
+    throw new Error('Unexpected API response format');
+  }), timeout, 'callLLM');
+}
+
+function withTimeout(promise, ms, label) {
+  ms = ms || 90000;
+  label = label || 'API call';
+  return Promise.race([
+    promise,
+    new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error(label + ' timed out after ' + Math.round(ms/1000) + 's')); }, ms);
+    })
+  ]);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOGGING
+// ═══════════════════════════════════════════════════════════════
+function addLog(msg, cls) {
+  var log = document.getElementById('activity-log');
+  log.classList.add('vis');
+  var d = document.createElement('div');
+  d.className = 'log-line' + (cls ? ' ' + cls : '');
+  d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TABS
+// ═══════════════════════════════════════════════════════════════
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('nav .nav-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.getElementById('tab-' + tab).classList.add('active');
+  var labels = { feed: 'News Feed', evergreen: 'Evergreen', gen: 'Generated' };
+  document.querySelectorAll('nav .nav-btn').forEach(function(b) {
+    if (b.textContent.indexOf(labels[tab]) >= 0 || b.textContent.indexOf('Generated') >= 0 && tab === 'gen') b.classList.add('active');
+  });
+  if (tab === 'gen') renderGenList();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RSS FEED
+// ═══════════════════════════════════════════════════════════════
+function loadFeeds() {
+  document.getElementById('feed-loading').style.display = 'block';
+  document.getElementById('feed-list').innerHTML = '';
+
+  fetch(PROXY_URL + '/api/rss?sport=' + ACTIVE_SPORT + '&source=all')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      S.feedItems = data.items || [];
+      renderFeed();
+    })
+    .catch(function(e) {
+      document.getElementById('feed-loading').innerHTML =
+        '<div style="color:#f87171;">Failed to load feeds: ' + e.message + '</div>';
+    });
+}
+
+function renderFeed() {
+  document.getElementById('feed-loading').style.display = 'none';
+  var list = document.getElementById('feed-list');
+  list.innerHTML = '';
+
+  var items = S.feedItems;
+  if (S.feedFilter !== 'all') {
+    items = items.filter(function(it) { return it.source === S.feedFilter; });
+  }
+
+  if (!items.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:#475569;font-family:system-ui,sans-serif;">No articles found.</div>';
+    return;
+  }
+
+  items.forEach(function(item, idx) {
+    var realIdx = S.feedItems.indexOf(item);
+    var srcClass = 'src-' + item.source;
+    var srcLabel = SRC_LABELS[item.source] || item.source;
+    var timeStr = item.pubDate ? timeAgo(new Date(item.pubDate)) : '';
+    var isSelected = S.selectedFeedIdx === realIdx;
+
+    var div = document.createElement('div');
+    div.className = 'feed-item' + (isSelected ? ' selected' : '');
+    div.innerHTML =
+      '<div class="feed-title">' + escHtml(item.title) + '</div>'
+      + '<div class="feed-meta">'
+      +   '<span class="src-badge ' + srcClass + '">' + srcLabel + '</span>'
+      +   '<span class="feed-time">' + timeStr + '</span>'
+      + '</div>'
+      + (item.description ? '<div class="feed-desc">' + escHtml(item.description) + '</div>' : '')
+      + '<div class="feed-expand" id="feed-expand-' + realIdx + '">'
+      +   '<div class="ctrl-row" style="margin-bottom:10px;">'
+      +     '<div class="ctrl"><label>Category</label>'
+      +       '<select id="feed-cat-' + realIdx + '">'
+      +         '<option>Season Analysis</option><option>Transfer News</option><option>Injury Updates</option>'
+      +         '<option>Competition Guides</option><option>Team Guides</option><option>Match Previews</option>'
+      +         '<option>Club News</option><option>Player Features</option><option>Manager Features</option>'
+      +         '<option>Fan Features</option><option>Fixture Analysis</option>'
+      +       '</select>'
+      +     '</div>'
+      +     '<div class="ctrl"><label>Extra Context (optional)</label>'
+      +       '<div class="upload-area" id="feed-upload-' + realIdx + '" onclick="document.getElementById(\'feed-file-' + realIdx + '\').click()">'
+      +         'Drop PDF/DOCX/TXT or click'
+      +       '</div>'
+      +       '<input type="file" id="feed-file-' + realIdx + '" accept=".pdf,.docx,.txt,.md,.html" style="display:none" onchange="handleFileUpload(this,\'feed-' + realIdx + '\')" />'
+      +     '</div>'
+      +   '</div>'
+      +   '<textarea id="feed-notes-' + realIdx + '" placeholder="Extra notes or angles (optional)..." rows="2" style="margin-bottom:10px;width:100%;"></textarea>'
+      +   '<button class="btn btn-primary" onclick="generateFromFeed(' + realIdx + ')">Generate WhatChan Article</button>'
+      +   '<div id="feed-pipeline-' + realIdx + '" class="pipeline-bar" style="display:none;"></div>'
+      + '</div>';
+
+    div.onclick = function(e) {
+      // Don't toggle if clicking inside the expand panel
+      if (e.target.closest('.feed-expand')) return;
+      toggleFeedItem(realIdx);
+    };
+    list.appendChild(div);
+  });
+}
+
+function toggleFeedItem(idx) {
+  if (S.selectedFeedIdx === idx) {
+    S.selectedFeedIdx = -1;
+  } else {
+    S.selectedFeedIdx = idx;
+  }
+  renderFeed();
+  if (S.selectedFeedIdx >= 0) {
+    var expand = document.getElementById('feed-expand-' + idx);
+    if (expand) expand.classList.add('open');
+  }
+}
+
+function filterFeed(source) {
+  S.feedFilter = source;
+  S.selectedFeedIdx = -1;
+  document.querySelectorAll('.filter-btn').forEach(function(b) {
+    b.classList.toggle('active', b.dataset.source === source);
+  });
+  renderFeed();
+}
+
+function timeAgo(date) {
+  var secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return Math.floor(secs/60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
+  return Math.floor(secs/86400) + 'd ago';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  URL FETCH
+// ═══════════════════════════════════════════════════════════════
+function fetchUrlArticle() {
+  var url = document.getElementById('url-input').value.trim();
+  if (!url) return;
+  if (!url.match(/^https?:\/\//)) url = 'https://' + url;
+
+  var btn = document.getElementById('url-fetch-btn');
+  var status = document.getElementById('url-status');
+  btn.disabled = true;
+  btn.textContent = 'Fetching...';
+  status.innerHTML = '<span class="spinner"></span> Extracting article...';
+
+  fetch(PROXY_URL + '/api/fetch-article', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ articleUrl: url })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    S.urlSource = { title: data.title, text: data.text, url: data.url };
+    status.innerHTML = '<span style="color:#86efac;">Extracted ' + data.text.length + ' chars from: ' + escHtml(data.title || url) + '</span>';
+    document.getElementById('url-preview-text').textContent = data.text.slice(0, 500) + (data.text.length > 500 ? '...' : '');
+    document.getElementById('url-expand').classList.add('open');
+  })
+  .catch(function(e) {
+    status.innerHTML = '<span style="color:#f87171;">Error: ' + e.message + '</span>';
+  })
+  .finally(function() {
+    btn.disabled = false;
+    btn.textContent = 'Fetch';
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FILE UPLOAD (PDF, DOCX, TXT)
+// ═══════════════════════════════════════════════════════════════
+function handleFileUpload(input, key) {
+  var file = input.files[0];
+  if (!file) return;
+  var ext = file.name.split('.').pop().toLowerCase();
+
+  var area = document.getElementById(key.indexOf('feed-') === 0 ? 'feed-upload-' + key.replace('feed-','') : key + '-upload-area');
+
+  if (ext === 'pdf') {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var typedArray = new Uint8Array(e.target.result);
+      if (!window.pdfjsLib) {
+        alert('PDF.js not loaded');
+        return;
+      }
+      pdfjsLib.getDocument(typedArray).promise.then(function(pdf) {
+        var pages = [];
+        var total = pdf.numPages;
+        function readPage(n) {
+          if (n > total) {
+            var text = pages.join('\n\n').replace(/\s{3,}/g, '\n\n').trim();
+            S.uploadedContext[key] = { name: file.name, text: text };
+            if (area) { area.textContent = file.name + ' (' + text.length + ' chars)'; area.classList.add('has-file'); }
+            return;
+          }
+          pdf.getPage(n).then(function(page) {
+            return page.getTextContent().then(function(tc) {
+              pages.push(tc.items.map(function(i){ return i.str; }).join(' '));
+              readPage(n + 1);
+            });
+          });
+        }
+        readPage(1);
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (ext === 'docx') {
+    var reader2 = new FileReader();
+    reader2.onload = function(e) {
+      if (!window.mammoth) { alert('Mammoth.js not loaded'); return; }
+      mammoth.extractRawText({ arrayBuffer: e.target.result })
+        .then(function(result) {
+          S.uploadedContext[key] = { name: file.name, text: result.value };
+          if (area) { area.textContent = file.name + ' (' + result.value.length + ' chars)'; area.classList.add('has-file'); }
+        });
+    };
+    reader2.readAsArrayBuffer(file);
+  } else {
+    // TXT, MD, HTML
+    var reader3 = new FileReader();
+    reader3.onload = function(e) {
+      var text = e.target.result.replace(/<[^>]+>/g, ' ').trim();
+      S.uploadedContext[key] = { name: file.name, text: text };
+      if (area) { area.textContent = file.name + ' (' + text.length + ' chars)'; area.classList.add('has-file'); }
+    };
+    reader3.readAsText(file);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PROMPTS
+// ═══════════════════════════════════════════════════════════════
+function getSystemPrompt() {
+  var sport = SPORTS[ACTIVE_SPORT];
+  var sportLabel = sport.label.toLowerCase();
+  return 'You are an expert ' + sportLabel + ' journalist writing for WhatChan (' + sport.siteUrl + '), a respected UK ' + sportLabel + ' media site. Your writing style closely mirrors BBC Sport and Sky Sports — authoritative, conversational, fact-rich and free of hype.\n\n'
+    + (sport.systemPromptExtra || '')
+    + 'ORIGINALITY — THIS IS CRITICAL:\n'
+    + '- You are creating a COMPLETELY ORIGINAL article. It must NEVER look copied from the source.\n'
+    + '- Use the source material ONLY for factual grounding — take the facts and write your OWN angle, structure, and analysis.\n'
+    + '- Rewrite every sentence in your own voice. Do NOT paraphrase or closely mirror the source.\n'
+    + '- Add expert context, tactical insight, and fan perspective the source does NOT have.\n'
+    + '- The result must be original enough to pass a plagiarism check.\n\n'
+    + 'WRITING RULES:\n'
+    + '- British English throughout (colour, programme, licence, organised, analyse, etc.)\n'
+    + '- Tone: informed, warm, direct — like a trusted ' + sportLabel + ' journalist talking to a fan\n'
+    + '- Avoid cliches: no "do-or-die", "firing on all cylinders", "hit the ground running", "remains to be seen"\n'
+    + '- Every paragraph must add genuine value — no padding or filler\n'
+    + '- Vary sentence length: mix short punchy sentences with richer analytical ones\n'
+    + '- Use specific stats, dates and names to add credibility\n'
+    + '- Do NOT focus on TV channels — write about the ' + sportLabel + ' itself\n\n'
+    + 'FACTUAL ACCURACY:\n'
+    + '- ONLY state facts from the NEWS CONTEXT or TRUSTED CONTEXT provided\n'
+    + '- NEVER invent stats, results, rankings or player situations\n'
+    + '- Write around gaps — do not fill them with guesses\n\n'
+    + 'SEO & GEO OPTIMISATION:\n'
+    + '- H1 must contain the primary keyword naturally\n'
+    + '- Answer the question implied by the title in the first two paragraphs (position zero targeting)\n'
+    + '- Use related semantic keywords (LSI) throughout — vary phrasing naturally\n'
+    + '- Structured, scannable content optimised for Google featured snippets and AI overviews\n'
+    + '- Use h2 subheadings targeting long-tail keyword variations\n'
+    + '- Include a FAQ section with details/summary tags + JSON-LD FAQ schema\n\n'
+    + 'HTML OUTPUT FORMAT — Use the .wc-post class system:\n'
+    + '- Wrap everything inside the body in <div class="wc-post">...</div>\n'
+    + '- Use h2 for all section headings (styled automatically with gold left border)\n'
+    + '- Start with a <div class="wc-editors-note"> containing a <div class="wc-editors-note-label">Editor\'s Note</div> and a <p> summary paragraph\n'
+    + '- Include at least one <div class="wc-pullquote">...</div> with a quote and <cite> attribution\n'
+    + '- Include a <div class="wc-stats-strip"> with 3-5 stat cards: <div class="wc-stat-card"><div class="wc-stat-num">NUMBER</div><div class="wc-stat-label">LABEL</div></div>\n'
+    + '- End article body with: <p class="wc-sources"><strong>Sources:</strong> brief attribution</p>\n'
+    + '- Do NOT include banners, tags, schema, or CSS — those are added automatically by the generator\n'
+    + '- Output ONLY the inner HTML content (everything that goes inside <div class="wc-post">)\n'
+    + '- No DOCTYPE, html, head, body, style, or script tags';
+}
+
+function getEeatSystem() {
+  var sport = SPORTS[ACTIVE_SPORT];
+  var sportLabel = sport.label.toLowerCase();
+  return 'You are an E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) specialist editor for WhatChan.\n\n'
+    + 'Your job: take a draft ' + sportLabel + ' article and enhance it to score highly on Google\'s E-E-A-T quality signals.\n\n'
+    + 'ENHANCE THESE DIMENSIONS:\n\n'
+    + '1. EXPERIENCE — Add first-person fan perspective where natural. Reference the atmosphere of live events, what it feels like to watch. Use phrases like "anyone who watched...", "the mood at...", "fans will remember...".\n\n'
+    + '2. EXPERTISE — Strengthen technical analysis. Ensure sport-specific terminology and concepts are correctly described. Add context that shows deep ' + sportLabel + ' knowledge (e.g. historical comparisons, tactical/technical trends).\n\n'
+    + '3. AUTHORITATIVENESS — Ensure claims are backed by specific evidence. Add attribution ("according to...", "data from..."). Reference specific statistics where available. Strengthen the author credit.\n\n'
+  + '4. TRUSTWORTHINESS — Remove or soften unverified claims. Ensure balanced perspective. Flag predictions clearly as opinion not fact. Strengthen sourcing attribution.\n\n'
+  + 'RULES:\n'
+  + '- Keep the same .wc-post HTML structure and class names\n'
+  + '- Keep the same overall length (do not cut content)\n'
+  + '- Do NOT add new facts — only enhance existing content\n'
+  + '- Do NOT change the headline or editor\'s note\n'
+  + '- Enhance the pullquotes, stat cards, and source attributions where possible\n'
+  + '- British English throughout\n'
+  + '- Output ONLY the enhanced HTML body content (inner content of .wc-post), nothing else';
+}
+
+function getQcSystem() {
+  var sportLabel = SPORTS[ACTIVE_SPORT].label.toLowerCase();
+  return 'You are a rigorous fact-checking editor for WhatChan, a UK ' + sportLabel + ' media site.\n\n'
+    + 'CHECK FOR:\n'
+    + '1. WRONG NAMES — Are coaches/managers/trainers named actually in that role currently?\n'
+    + '2. WRONG PEOPLE — Are players/athletes/drivers actually at that team/stable/organisation?\n'
+    + '3. WRONG STATS — Rankings, standings, scores, records — do they match the provided context?\n'
+    + '4. OUTDATED CONTEXT — References to events or situations no longer current\n'
+    + '5. FABRICATED QUOTES — Quotes not in the provided context\n'
+    + '6. WRONG DATES — Event dates, schedules, deadlines\n'
+    + '7. QUALITY — Cliches, filler, poor structure, missing British English\n\n'
+    + 'Respond with ONLY a JSON object (no markdown, no backticks):\n'
+    + '{\n'
+    + '  "verdict": "PASS" | "FAIL",\n'
+    + '  "confidence": 0-100,\n'
+    + '  "issues": [\n'
+    + '    { "severity": "critical" | "major" | "minor", "type": "string", "description": "string", "correction": "string" }\n'
+    + '  ],\n'
+    + '  "verified_facts": ["list of key facts confirmed"]\n'
+    + '}\n\n'
+    + 'VERDICT: Any critical = FAIL. 2+ major = FAIL. Otherwise PASS.';
+}
+
+function buildPrompt(spec, ctx, articleLength, extraContext) {
+  articleLength = articleLength || 'standard';
+  var isLongform = articleLength === 'longform';
+  var isMedium   = articleLength === 'medium';
+  var isCustom   = articleLength === 'custom';
+  var ctxSlice = isLongform ? 3000 : (isMedium ? 2000 : 1200);
+  var sport = SPORTS[ACTIVE_SPORT];
+  var sportLabel = sport.label;
+
+  var p = 'Write a complete, SEO-optimised ' + sportLabel.toLowerCase() + ' article for WhatChan (' + sport.siteUrl + ').\n\n'
+    + 'Topic: ' + spec.title + '\n'
+    + 'Primary keywords: ' + spec.keywords.join(', ') + '\n'
+    + 'Category: ' + spec.category + '\n'
+    + 'Date: ' + TODAY_STR + '\n';
+
+  if (ctx) {
+    p += '\n--- SOURCE / NEWS CONTEXT (factual grounding — use these facts) ---\n' + ctx.slice(0, ctxSlice) + '\n--- END CONTEXT ---\n';
+    p += 'REMINDER: Use the facts above but write a COMPLETELY ORIGINAL article with your own angle, structure, and phrasing. Never mirror the source.\n';
+  }
+  if (extraContext) {
+    p += '\n--- TRUSTED ADDITIONAL CONTEXT (editor-provided — treat as verified fact) ---\n' + extraContext.slice(0, 2000) + '\n--- END TRUSTED CONTEXT ---\n';
+  }
+
+  // Length-specific requirements
+  if (isCustom) {
+    var wc = S.customWordCount || 1000;
+    var subh = Math.max(3, Math.round(wc / 200));
+    p += '\nLENGTH: CUSTOM — exactly ' + wc + ' words (±5%). ' + subh + '+ h2 subheadings.\n';
+  } else if (isLongform) {
+    p += '\nLENGTH: LONG-FORM — 2,000-2,500 words. 7+ h2 subheadings. In-depth expert analysis.\n';
+  } else if (isMedium) {
+    p += '\nLENGTH: MEDIUM — 1,200-1,500 words. 5+ h2 subheadings. Solid depth.\n';
+  } else {
+    p += '\nLENGTH: STANDARD — 600-800 words. 4+ h2 subheadings.\n';
+  }
+
+  // Fixtures-specific extra rules
+  if (spec.typeId === 'fixtures') {
+    if (isLongform) {
+      p += '\nFIXTURES ARTICLE EXTRA RULES (LONG-FORM):\n'
+        + '- Analyse the last 12 results: identify trends, momentum shifts, home vs away form, goals scored/conceded\n'
+        + '- Give each of the next 6 upcoming fixtures a full breakdown: tactical challenge, form comparison, key players to watch, danger men, realistic prediction\n'
+        + '- Provide a momentum rating (e.g. Rising / Steady / Declining) with supporting evidence\n'
+        + '- "Fixture Difficulty Rating" for the run ahead (Easy / Moderate / Tough / Very Tough)\n'
+        + '- Include an Overall Outlook h2 summarising what this run means for the season\n'
+        + '- Use a summary HTML table showing all fixtures at a glance (date, opponent, venue, competition)\n\n';
+    } else if (isMedium) {
+      p += '\nFIXTURES ARTICLE EXTRA RULES (MEDIUM):\n'
+        + '- Analyse the last 6 results: identify form trends, home vs away record, goals scored/conceded\n'
+        + '- List the next FOUR upcoming fixtures with opponent, date, venue (home/away) and competition\n'
+        + '- For each fixture write a full paragraph: tactical challenge, form comparison, key players to watch, realistic prediction\n'
+        + '- Include an Overall Outlook h2 summarising the run of fixtures\n'
+        + '- Use a summary HTML table showing all four fixtures at a glance\n\n';
+    } else {
+      p += '\nFIXTURES ARTICLE EXTRA RULES:\n'
+        + '- Search for and list the next FOUR upcoming fixtures for this team with real dates and opponents\n'
+        + '- For each fixture: opponent, date, venue (home/away), competition\n'
+        + '- For each fixture write a paragraph: tactical challenge, form comparison, key players to watch, realistic prediction\n'
+        + '- Include an Overall Outlook h2 summarising the run of fixtures as a whole\n'
+        + '- Use a summary table (HTML table) showing all four fixtures at a glance\n\n';
+    }
+  }
+
+  // Match Review extra rules
+  if (spec.typeId === 'review') {
+    p += '\nMATCH REVIEW EXTRA RULES:\n'
+      + '- Structure around the match timeline: build-up, first half, second half, aftermath\n'
+      + '- Include a player ratings section: rate each starter out of 10 with a one-line justification\n'
+      + '- Use a stats strip showing key match stats: possession, shots, xG, passes, fouls\n'
+      + '- Identify key tactical battles and turning points in the match\n'
+      + '- Include manager reaction quotes where available from context\n'
+      + '- End with a "What this means" section covering league position / competition implications\n\n';
+  }
+
+  // Match Preview extra rules
+  if (spec.typeId === 'preview') {
+    p += '\nMATCH PREVIEW EXTRA RULES:\n'
+      + '- Include confirmed or expected team news and injury updates\n'
+      + '- Head-to-head record between the two sides (last 5 meetings if available)\n'
+      + '- Current form guide for both teams (last 5 results: W/D/L)\n'
+      + '- Key tactical battles to watch (e.g. winger vs full-back, midfield matchup)\n'
+      + '- Include betting odds and a prediction with reasoning\n'
+      + '- How to watch: TV channel, kick-off time, streaming options\n\n';
+  }
+
+  p += '\nREQUIRED STRUCTURE (follow this order):\n\n'
+    + '1. EDITOR\'S NOTE — Start with:\n'
+    + '   <div class="wc-editors-note"><div class="wc-editors-note-label">Editor\'s Note</div><p>A 2-3 sentence summary of the key story and why it matters.</p></div>\n\n'
+    + '2. OPENING PARAGRAPHS — 2-3 strong paragraphs setting the scene. Answer the headline question immediately. Be vivid and authoritative.\n\n'
+    + '3. STATS STRIP — Include a stats section:\n'
+    + '   <div class="wc-stats-strip"><div class="wc-stat-card"><div class="wc-stat-num">NUMBER</div><div class="wc-stat-label">LABEL</div></div>... 3-5 cards</div>\n\n'
+    + '4. MAIN BODY — Multiple h2 sections with analysis, context, and insight. Each h2 should target a long-tail keyword variation.\n\n'
+    + '5. PULLQUOTE — At least one:\n'
+    + '   <div class="wc-pullquote">"Quote text here."<cite>Attribution</cite></div>\n'
+    + '   Use a real quote from the context if available, or a strong analytical observation.\n\n'
+    + '6. FAQ SECTION — ' + (isLongform ? '5' : isMedium ? '4' : '3') + ' Q&As using <details><summary>Question?</summary><p>Answer.</p></details>\n'
+    + '   Plus a <script type="application/ld+json"> FAQ schema block.\n\n'
+    + '7. SOURCES — End with: <p class="wc-sources"><strong>Sources:</strong> Brief attribution of source material.</p>\n\n'
+    + 'Do NOT include: banners, tags, CSS, schema (except FAQ schema), DOCTYPE, html/head/body tags, or the outer <div class="wc-post"> wrapper.\n'
+    + 'Output ONLY the inner HTML content.\n\n'
+    + 'ORIGINALITY: This must be a totally unique article. Same facts, completely different writing. Your own angle, your own structure, your own voice.';
+
+  return p;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCHEMA + WP BLOCK
+// ═══════════════════════════════════════════════════════════════
+function buildWpBlock(spec, body, seo) {
+  var siteUrl = getSiteUrl();
+  var blogUrl = siteUrl + '/whatchan-blog-posts';
+  var articleUrl = blogUrl + '/' + (seo.urlSlug || spec.slug);
+
+  // Schema.org Article
+  var articleSchema = {
+    '@context': 'https://schema.org', '@type': 'Article',
+    'headline': seo.h1 || spec.title,
+    'description': seo.metaDesc,
+    'url': articleUrl,
+    'datePublished': TODAY_ISO, 'dateModified': TODAY_ISO,
+    'author': { '@type': 'Person', 'name': AUTHOR.name, 'url': AUTHOR.profile },
+    'publisher': { '@type': 'Organization', 'name': SITE_NAME, 'url': siteUrl, 'logo': { '@type': 'ImageObject', 'url': siteUrl + '/logo.png' } },
+    'image': siteUrl + '/logo.png',
+    'mainEntityOfPage': { '@type': 'WebPage', '@id': articleUrl }
+  };
+
+  // Schema.org Breadcrumb
+  var breadcrumb = {
+    '@context': 'https://schema.org', '@type': 'BreadcrumbList',
+    'itemListElement': [
+      { '@type': 'ListItem', 'position': 1, 'name': 'Home', 'item': siteUrl },
+      { '@type': 'ListItem', 'position': 2, 'name': 'Blog', 'item': blogUrl },
+      { '@type': 'ListItem', 'position': 3, 'name': seo.h1 || spec.title, 'item': articleUrl }
+    ]
+  };
+
+  // SEO comment block
+  var seoBlock = '<!--\n  SEO DATA\n\n'
+    + '  Title Options (50-65 characters including spaces):\n';
+  if (seo.titleOptions && seo.titleOptions.length) {
+    seo.titleOptions.forEach(function(t, i) {
+      seoBlock += '  ' + (i+1) + '. ' + t + ' [' + t.length + ']\n';
+    });
+  } else {
+    seoBlock += '  1. ' + seo.seoTitle + ' [' + seo.seoTitle.length + ']\n';
+  }
+  seoBlock += '\n  Meta Description Options (120-160 characters including spaces):\n';
+  if (seo.metaOptions && seo.metaOptions.length) {
+    seo.metaOptions.forEach(function(d, i) {
+      seoBlock += '  ' + (i+1) + '. ' + d + ' [' + d.length + ']\n';
+    });
+  } else {
+    seoBlock += '  1. ' + seo.metaDesc + ' [' + seo.metaDesc.length + ']\n';
+  }
+  seoBlock += '\n  Tags: ' + (seo.tags || spec.keywords).join(', ') + '\n';
+  seoBlock += '  Focus Keyphrases: ' + (seo.keyphrases || spec.keywords.slice(0,3)).join(', ') + '\n';
+  seoBlock += '  Keywords: ' + (seo.allKeywords || spec.keywords).join(', ') + '\n';
+  seoBlock += '-->';
+
+  // Sport banner (mid-article)
+  var sportBanner = buildBannerHtml(SPORT_BANNERS[ACTIVE_SPORT] || SPORT_BANNERS.football);
+  // Blog banner (near bottom)
+  var blogBannerHtml = buildBannerHtml(BLOG_BANNER);
+
+  // Tags HTML
+  var tagsArr = seo.tags || spec.keywords;
+  var tagsHtml = '<div class="wc-tags">' + tagsArr.map(function(t) {
+    return '<span class="wc-tag">' + t + '</span>';
+  }).join('') + '</div>';
+
+  return [
+    seoBlock,
+    '',
+    '<!-- Schema.org Article JSON-LD -->',
+    '<script type="application/ld+json">\n' + JSON.stringify(articleSchema, null, 2) + '\n<\/script>',
+    '',
+    '<!-- Schema.org BreadcrumbList JSON-LD -->',
+    '<script type="application/ld+json">\n' + JSON.stringify(breadcrumb, null, 2) + '\n<\/script>',
+    '',
+    '<!-- WhatChan CSS styles (do not alter) -->',
+    ART_CSS,
+    BANNER_CSS,
+    '',
+    '<div class="wc-post">',
+    '',
+    body,
+    '',
+    '<!-- Sport TV Banner -->',
+    sportBanner,
+    '',
+    '<!-- Blog Banner -->',
+    blogBannerHtml,
+    '',
+    tagsHtml,
+    '',
+    '</div>'
+  ].join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SEO FIELDS GENERATION
+// ═══════════════════════════════════════════════════════════════
+function genSeoFields(spec) {
+  var sportLabel = SPORTS[ACTIVE_SPORT].label;
+  var prompt = 'You are an SEO expert for WhatChan, a UK ' + sportLabel.toLowerCase() + ' media site.\n\n'
+    + 'Given this article, produce comprehensive SEO fields as a JSON object (no markdown, no backticks).\n\n'
+    + 'Article title: ' + spec.title + '\nCategory: ' + spec.category + '\nPrimary keywords: ' + spec.keywords.join(', ') + '\n'
+    + (spec.team ? 'Subject: ' + spec.team + '\n' : '')
+    + '\nReturn this EXACT JSON structure:\n'
+    + '{\n'
+    + '  "h1": "Compelling H1 headline, keyword-rich, under 80 chars",\n'
+    + '  "title_options": ["Title Option 1 | WhatChan (50-65 chars)", "Title Option 2 | WhatChan", "Title Option 3 | WhatChan", "Title Option 4 | WhatChan", "Title Option 5 | WhatChan"],\n'
+    + '  "meta_options": ["Meta description 1 (120-160 chars)", "Meta description 2 (120-160 chars)"],\n'
+    + '  "url_slug": "keyword-first-lowercase-hyphens-max-8-words",\n'
+    + '  "tags": ["Tag1", "Tag2", "Tag3", "Tag4", "Tag5", "Tag6", "Tag7", "Tag8"],\n'
+    + '  "focus_keyphrases": ["keyphrase 1", "keyphrase 2", "keyphrase 3"],\n'
+    + '  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6", "keyword7", "keyword8", "keyword9", "keyword10"]\n'
+    + '}\n\n'
+    + 'Rules:\n'
+    + '- All 5 title_options must be 50-65 characters each (count carefully)\n'
+    + '- Both meta_options must be 120-160 characters each\n'
+    + '- tags: 6-10 proper nouns and topics mentioned in the article\n'
+    + '- focus_keyphrases: 2-3 word phrases people would search for\n'
+    + '- keywords: 10-15 individual keywords for the article\n'
+    + '- British English throughout\n'
+    + '- Raw JSON only, no explanations';
+
+  // Use free model for SEO grunt work
+  return callFreeLLM('You are an SEO specialist. Output only valid JSON, nothing else.', prompt, 800)
+    .then(function(raw) {
+      var clean = raw.replace(/^```[\w]*\n?/,'').replace(/```$/,'').trim();
+      var start = clean.indexOf('{'); var end = clean.lastIndexOf('}');
+      if (start >= 0 && end > start) clean = clean.slice(start, end + 1);
+      var obj = JSON.parse(clean);
+      return {
+        h1:           obj.h1 || spec.title,
+        seoTitle:     (obj.title_options && obj.title_options[0]) || spec.title + ' | WhatChan',
+        titleOptions: obj.title_options || [],
+        metaDesc:     (obj.meta_options && obj.meta_options[0]) || '',
+        metaOptions:  obj.meta_options || [],
+        urlSlug:      obj.url_slug || spec.slug,
+        tags:         obj.tags || spec.keywords,
+        keyphrases:   obj.focus_keyphrases || spec.keywords.slice(0,3),
+        allKeywords:  obj.keywords || spec.keywords
+      };
+    }).catch(function() {
+      return {
+        h1: spec.title, seoTitle: spec.title.slice(0,55) + ' | WhatChan',
+        titleOptions: [], metaDesc: spec.title + ' — WhatChan.', metaOptions: [],
+        urlSlug: spec.slug, tags: spec.keywords, keyphrases: spec.keywords.slice(0,3),
+        allKeywords: spec.keywords
+      };
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  QUALITY CHECK
+// ═══════════════════════════════════════════════════════════════
+function qualityCheck(spec, articleHtml, newsContext) {
+  var prompt = 'FACT-CHECK THIS DRAFT:\n\n'
+    + 'Title: ' + spec.title + '\nCategory: ' + spec.category + '\nDate: ' + TODAY_STR + '\n\n'
+    + '=== NEWS CONTEXT ===\n' + (newsContext || '(none)').slice(0, 2000) + '\n\n'
+    + '=== DRAFT ARTICLE ===\n' + articleHtml.slice(0, 5000) + '\n\n'
+    + 'Verify manager names, player claims, stats, and dates. Return JSON verdict.';
+  // QC uses free model — grunt work
+  return callFreeLLM(getQcSystem(), prompt, 1500)
+    .then(function(raw) {
+      try {
+        var clean = raw.replace(/^```[\w]*\n?/,'').replace(/```$/,'').trim();
+        var start = clean.indexOf('{'); var end = clean.lastIndexOf('}');
+        if (start >= 0 && end > start) clean = clean.slice(start, end + 1);
+        var obj = JSON.parse(clean);
+        return { verdict: obj.verdict || 'PASS', confidence: obj.confidence || 0, issues: obj.issues || [], verified_facts: obj.verified_facts || [] };
+      } catch(e) {
+        return { verdict: 'PASS', confidence: 0, issues: [], verified_facts: [], parseError: true };
+      }
+    })
+    .catch(function(e) {
+      return { verdict: 'PASS', confidence: 0, issues: [], verified_facts: [], error: e.message };
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  E-E-A-T POLISH
+// ═══════════════════════════════════════════════════════════════
+function eeatPolish(spec, articleHtml, newsContext) {
+  var prompt = 'ENHANCE this article for E-E-A-T quality signals.\n\n'
+    + 'Title: ' + spec.title + '\nCategory: ' + spec.category + '\nDate: ' + TODAY_STR + '\n\n'
+    + '=== NEWS CONTEXT (for reference) ===\n' + (newsContext || '(none)').slice(0, 1500) + '\n\n'
+    + '=== ARTICLE TO ENHANCE ===\n' + articleHtml + '\n\n'
+    + 'Return ONLY the enhanced HTML body content.';
+
+  var tokenLimit = getTokenLimit();
+  return callLLM(getEeatSystem(), prompt, tokenLimit);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  REWRITE WITH FIXES (if QC fails)
+// ═══════════════════════════════════════════════════════════════
+function rewriteWithFixes(spec, originalHtml, newsContext, qcResult) {
+  var fixes = qcResult.issues.map(function(issue, i) {
+    return (i+1) + '. [' + issue.severity + '] ' + issue.description + (issue.correction ? ' -> ' + issue.correction : '');
+  }).join('\n');
+  var prompt = 'REWRITE to fix these QC issues:\n\n' + fixes + '\n\n'
+    + '=== CONTEXT ===\n' + (newsContext || '(none)').slice(0, 2000) + '\n\n'
+    + '=== ARTICLE ===\n' + originalHtml.slice(0, 5000) + '\n\n'
+    + 'Fix ALL issues. Keep same structure and length. Output ONLY corrected HTML.';
+  var tokens = getTokenLimit();
+  return callLLM(getSystemPrompt(), prompt, tokens);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PIPELINE: GENERATE FROM FEED ARTICLE
+// ═══════════════════════════════════════════════════════════════
+function generateFromFeed(idx) {
+  var item = S.feedItems[idx];
+  if (!item) return;
+
+  var catEl = document.getElementById('feed-cat-' + idx);
+  var category = catEl ? catEl.value : 'Season Analysis';
+  var notes = (document.getElementById('feed-notes-' + idx) || {}).value || '';
+  var uploadKey = 'feed-' + idx;
+  var extra = S.uploadedContext[uploadKey] ? S.uploadedContext[uploadKey].text : '';
+  if (notes) extra = (extra ? extra + '\n\n' : '') + 'EDITOR NOTES: ' + notes;
+
+  // First fetch the full article text
+  var pipelineEl = document.getElementById('feed-pipeline-' + idx);
+  pipelineEl.style.display = 'flex';
+  showPipeline(pipelineEl, 'fetch');
+
+  fetch(PROXY_URL + '/api/fetch-article', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ articleUrl: item.link })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    var sourceText = data.text || item.description || '';
+    runArticlePipeline({
+      title: item.title,
+      sourceText: sourceText,
+      category: category,
+      source: item.source,
+      extraContext: extra,
+      pipelineEl: pipelineEl
+    });
+  })
+  .catch(function(e) {
+    showPipeline(pipelineEl, 'error');
+    addLog('Failed to fetch article: ' + e.message, 'err');
+  });
+}
+
+function generateFromUrl() {
+  if (!S.urlSource) { alert('Fetch an article first.'); return; }
+  var category = document.getElementById('url-cat').value;
+  var notes = document.getElementById('url-extra-notes').value || '';
+  var extra = S.uploadedContext['url'] ? S.uploadedContext['url'].text : '';
+  if (notes) extra = (extra ? extra + '\n\n' : '') + 'EDITOR NOTES: ' + notes;
+
+  var pipelineEl = document.getElementById('url-pipeline');
+  pipelineEl.style.display = 'flex';
+
+  runArticlePipeline({
+    title: S.urlSource.title,
+    sourceText: S.urlSource.text,
+    category: category,
+    source: 'custom',
+    extraContext: extra,
+    pipelineEl: pipelineEl
+  });
+}
+
+function runArticlePipeline(opts) {
+  var spec = {
+    slug: 'article-' + TODAY_ISO + '-' + Math.random().toString(36).slice(2, 6),
+    title: opts.title,
+    category: opts.category,
+    keywords: [opts.title.split(':')[0].trim(), opts.category].filter(Boolean),
+    team: '',
+    typeId: 'rewrite',
+    isTopical: true,
+    source: opts.source
+  };
+
+  var articleLength = S.articleLength;
+  var baseTokens = getTokenLimit();
+  var pipe = opts.pipelineEl;
+  S.generating = true;
+
+  addLog('Starting pipeline: ' + spec.title);
+
+  // Step 1: Analyse source
+  showPipeline(pipe, 'analyse');
+  addLog('Step 1/4: Analysing source article...');
+
+  var analysePrompt = 'Analyse this source article and extract key facts:\n\n'
+    + '=== SOURCE ===\n' + opts.sourceText.slice(0, 4000) + '\n=== END ===\n\n'
+    + 'Extract: (1) key facts and events, (2) names/managers/players with roles, (3) stats, (4) direct quotes, (5) main angle.';
+
+  // Analysis uses free model — grunt work
+  callFreeLLM('You are a ' + SPORTS[ACTIVE_SPORT].label.toLowerCase() + ' news analyst. Extract facts thoroughly.', analysePrompt, 1500)
+    .then(function(analysis) {
+      // Step 2: Write article
+      showPipeline(pipe, 'write');
+      addLog('Step 2/4: Writing unique article...', 'ok');
+      var newsContext = analysis;
+      var writePrompt = buildPrompt(spec, newsContext, articleLength, opts.extraContext);
+      writePrompt += '\nNOTE: "' + opts.title + '" is the SOURCE headline. Create your OWN unique H1 with a different angle.';
+      return callLLM(getSystemPrompt(), writePrompt, baseTokens).then(function(draft) {
+        return { draft: draft, newsContext: newsContext };
+      });
+    })
+    .then(function(r) {
+      // Step 3: QC + SEO in parallel
+      showPipeline(pipe, 'qc');
+      addLog('Step 3/4: Quality check + SEO fields...', 'ok');
+      return Promise.all([
+        qualityCheck(spec, r.draft, r.newsContext),
+        genSeoFields(spec)
+      ]).then(function(results) {
+        return { draft: r.draft, newsContext: r.newsContext, qc: results[0], seo: results[1] };
+      });
+    })
+    .then(function(r) {
+      // If QC fails, rewrite
+      var body = r.draft;
+      var qcPromise;
+      if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
+        addLog('QC flagged issues — rewriting...');
+        qcPromise = rewriteWithFixes(spec, body, r.newsContext, r.qc).then(function(fb) {
+          return { body: fb.trim(), wasRewritten: true };
+        }).catch(function() {
+          return { body: body.trim(), wasRewritten: false };
+        });
+      } else {
+        qcPromise = Promise.resolve({ body: body.trim(), wasRewritten: false });
+      }
+      return qcPromise.then(function(fix) {
+        return { body: fix.body, newsContext: r.newsContext, qc: r.qc, seo: r.seo, wasRewritten: fix.wasRewritten };
+      });
+    })
+    .then(function(r) {
+      // Step 4: E-E-A-T Polish
+      showPipeline(pipe, 'eeat');
+      addLog('Step 4/4: E-E-A-T polish...', 'ok');
+      return eeatPolish(spec, r.body, r.newsContext).then(function(polished) {
+        return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
+      }).catch(function() {
+        // If EEAT fails, use unpolished version
+        return { body: r.body, qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
+      });
+    })
+    .then(function(result) {
+      showPipeline(pipe, 'done');
+      spec.title = result.seo.h1 || spec.title;
+      var wp = buildWpBlock(spec, result.body, result.seo);
+      S.generated.push({
+        spec: spec, wp: wp, seo: result.seo, status: 'done',
+        articleLength: articleLength, qc: result.qc,
+        wasRewritten: result.wasRewritten, eeatPolished: true
+      });
+      document.getElementById('gen-count').textContent = S.generated.length;
+      addLog('Article complete: ' + spec.title, 'ok');
+      renderGenList();
+    })
+    .catch(function(e) {
+      showPipeline(pipe, 'error');
+      addLog('Pipeline failed: ' + e.message, 'err');
+    })
+    .finally(function() {
+      S.generating = false;
+    });
+}
+
+function showPipeline(el, step) {
+  var steps = [
+    { id: 'fetch', label: 'Fetch' },
+    { id: 'analyse', label: 'Analyse' },
+    { id: 'write', label: 'Write' },
+    { id: 'qc', label: 'QC' },
+    { id: 'eeat', label: 'E-E-A-T' },
+    { id: 'done', label: 'Done' }
+  ];
+  var reachedActive = false;
+  el.innerHTML = steps.map(function(s, i) {
+    var cls = 'pipeline-step';
+    if (step === 'error' && s.id !== 'done') {
+      if (!reachedActive) cls += ' done';
+      else cls += ' error';
+    } else if (s.id === step) {
+      cls += ' active';
+      reachedActive = true;
+    } else if (!reachedActive) {
+      cls += ' done';
+    }
+    if (step === 'error' && i === steps.length - 1) cls = 'pipeline-step error';
+    if (step === 'done' && s.id === 'done') cls += ' done';
+    return (i > 0 ? '<span class="pipeline-arrow">&#8594;</span>' : '') +
+      '<span class="' + cls + '">' + (s.id === step && step !== 'done' && step !== 'error' ? '<span class="spinner" style="width:10px;height:10px;margin-right:4px;vertical-align:middle;"></span>' : '') + s.label + '</span>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EVERGREEN GENERATION
+// ═══════════════════════════════════════════════════════════════
+function runEgGenerate() {
+  var specs = [];
+  // Topical
+  if (S.selected['__topical__']) {
+    specs.push(getTopicalSpec());
+  }
+  // Evergreen
+  EVERGREEN.forEach(function(t) {
+    if (S.selected[t.slug]) specs.push(Object.assign({}, t, { typeId: t.slug, isTopical: false }));
+  });
+  if (!specs.length) return;
+
+  S.generating = true;
+  showTab('gen');
+  addLog('Generating ' + specs.length + ' evergreen article(s)...');
+
+  var idx = 0;
+  function next() {
+    if (idx >= specs.length) {
+      S.generating = false;
+      addLog('All done!', 'ok');
+      return;
+    }
+    var spec = specs[idx];
+    addLog('Writing: ' + spec.title);
+
+    var articleLength = S.articleLength;
+    var baseTokens = getTokenLimit();
+
+    // For evergreen, we use the model's knowledge (no source article)
+    var writePrompt = buildPrompt(spec, '', articleLength, '');
+
+    callLLM(getSystemPrompt(), writePrompt, baseTokens)
+      .then(function(draft) {
+        return Promise.all([
+          qualityCheck(spec, draft, ''),
+          genSeoFields(spec)
+        ]).then(function(r) { return { draft: draft, qc: r[0], seo: r[1] }; });
+      })
+      .then(function(r) {
+        var body = r.draft;
+        if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
+          return rewriteWithFixes(spec, body, '', r.qc)
+            .then(function(fb) { return { body: fb.trim(), qc: r.qc, seo: r.seo, wasRewritten: true }; })
+            .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false }; });
+        }
+        return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false };
+      })
+      .then(function(r) {
+        // E-E-A-T polish
+        return eeatPolish(spec, r.body, '')
+          .then(function(polished) { return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten }; })
+          .catch(function() { return r; });
+      })
+      .then(function(result) {
+        spec.title = result.seo.h1 || spec.title;
+        var wp = buildWpBlock(spec, result.body, result.seo);
+        S.generated.push({
+          spec: spec, wp: wp, seo: result.seo, status: 'done',
+          articleLength: articleLength, qc: result.qc,
+          wasRewritten: result.wasRewritten || false, eeatPolished: true
+        });
+        document.getElementById('gen-count').textContent = S.generated.length;
+        addLog('Done: ' + spec.title, 'ok');
+        renderGenList();
+      })
+      .catch(function(e) {
+        addLog('Failed: ' + spec.title + ' — ' + e.message, 'err');
+      })
+      .finally(function() {
+        idx++;
+        next();
+      });
+  }
+  next();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER: GENERATED LIST
+// ═══════════════════════════════════════════════════════════════
+function renderGenList() {
+  var list = document.getElementById('gen-list');
+  var empty = document.getElementById('empty-state');
+  if (!S.generated.length) {
+    list.innerHTML = '';
+    empty.classList.add('vis');
+    return;
+  }
+  empty.classList.remove('vis');
+  list.innerHTML = '';
+
+  S.generated.forEach(function(g, i) {
+    var col = catCol(g.spec.category);
+    var srcBadge = g.spec.source ? '<span class="src-badge src-' + g.spec.source + '">' + (SRC_LABELS[g.spec.source] || g.spec.source) + '</span>' : '';
+    var qcBadge = g.qc ? (g.qc.verdict === 'PASS'
+      ? '<span class="gen-status-ok">QC PASS (' + g.qc.confidence + '%)</span>'
+      : '<span class="gen-status-err">QC FAIL</span>') : '';
+    var eatBadge = g.eeatPolished ? '<span class="gen-status-ok">E-E-A-T</span>' : '';
+    var rewriteBadge = g.wasRewritten ? '<span class="gen-status-ok" style="color:#fbbf24;">Rewritten</span>' : '';
+
+    var card = document.createElement('div');
+    card.className = 'gen-card' + (S.previewIdx === i ? ' prev' : '');
+    card.innerHTML =
+      '<div class="gen-card-body">'
+      + '<div class="gen-top">'
+      +   '<div class="gen-badges">'
+      +     '<span class="pill-cat" style="background:' + col[0] + ';color:' + col[1] + '">' + g.spec.category + '</span>'
+      +     srcBadge
+      +     '<span class="pill-cat" style="background:#1e2d3d;color:#64748b;border:1px solid #263354">' + (g.articleLength || 'standard') + '</span>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:6px;">' + qcBadge + eatBadge + rewriteBadge + '</div>'
+      + '</div>'
+      + '<div class="gen-title">' + escHtml(g.seo ? g.seo.h1 : g.spec.title) + '</div>'
+      + '<div class="gen-meta">' + g.spec.category + ' &middot; ' + TODAY_STR + '</div>'
+      + '<div class="gen-actions">'
+      +   '<button class="btn btn-primary sm" onclick="togglePreview(' + i + ')">Preview</button>'
+      +   '<button class="btn btn-ghost sm" onclick="copyWp(' + i + ')" id="copy-btn-' + i + '">Copy HTML</button>'
+      +   '<button class="btn btn-ghost sm" onclick="openTab(' + i + ')">New Tab</button>'
+      +   '<button class="btn btn-ghost sm" onclick="toggleSeo(' + i + ')">SEO</button>'
+      +   '<button class="btn btn-ghost sm" onclick="toggleQc(' + i + ')">QC Details</button>'
+      +   '<button class="btn btn-ghost sm" style="color:#f87171;" onclick="deleteArticle(' + i + ')">Delete</button>'
+      + '</div>'
+      + '<div class="seo-panel" id="seo-panel-' + i + '">'
+      +   (g.seo ? '<div class="seo-row"><strong>H1:</strong> ' + escHtml(g.seo.h1) + '</div>'
+      +   '<div class="seo-row"><strong>SEO Title:</strong> ' + escHtml(g.seo.seoTitle) + '</div>'
+      +   '<div class="seo-row"><strong>Meta Desc:</strong> ' + escHtml(g.seo.metaDesc) + '</div>'
+      +   '<div class="seo-row"><strong>Slug:</strong> ' + escHtml(g.seo.urlSlug) + '</div>' : '')
+      + '</div>'
+      + '<div class="qc-panel" id="qc-panel-' + i + '">'
+      +   (g.qc ? '<div><strong>Verdict:</strong> <span class="' + (g.qc.verdict === 'PASS' ? 'qc-pass' : 'qc-fail') + '">' + g.qc.verdict + '</span> (confidence: ' + g.qc.confidence + '%)</div>'
+      +   (g.qc.issues.length ? g.qc.issues.map(function(iss) {
+            return '<div class="qc-issue ' + iss.severity + '"><strong>' + iss.severity + ':</strong> ' + escHtml(iss.description) + (iss.correction ? ' <em>Fix: ' + escHtml(iss.correction) + '</em>' : '') + '</div>';
+          }).join('') : '<div style="color:#86efac;margin-top:4px;">No issues found</div>')
+      : '')
+      + '</div>'
+      + '</div>';
+    list.appendChild(card);
+  });
+}
+
+function toggleSeo(i) {
+  var el = document.getElementById('seo-panel-' + i);
+  if (el) el.classList.toggle('open');
+}
+function toggleQc(i) {
+  var el = document.getElementById('qc-panel-' + i);
+  if (el) el.classList.toggle('open');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PREVIEW & COPY
+// ═══════════════════════════════════════════════════════════════
+function togglePreview(idx) {
+  if (S.previewIdx === idx) { closeSidePreview(); return; }
+  S.previewIdx = idx;
+  document.getElementById('prev-content').innerHTML = S.generated[idx].wp;
+  document.getElementById('side-preview').classList.add('open');
+  renderGenList();
+}
+
+function closeSidePreview() {
+  S.previewIdx = -1;
+  document.getElementById('side-preview').classList.remove('open');
+  renderGenList();
+}
+
+function sideCopy() {
+  if (S.previewIdx >= 0) copyWp(S.previewIdx);
+}
+
+function copyWp(idx) {
+  var text = S.generated[idx].wp;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() { flashCopy(idx); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    flashCopy(idx);
+  }
+}
+
+function flashCopy(idx) {
+  var btn = document.getElementById('copy-btn-' + idx);
+  if (btn) { btn.textContent = 'Copied!'; setTimeout(function() { btn.textContent = 'Copy HTML'; }, 2000); }
+}
+
+function openTab(idx) {
+  var w = window.open('', '_blank');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Preview</title></head><body>' + S.generated[idx].wp + '</body></html>');
+  w.document.close();
+}
+
+function deleteArticle(idx) {
+  S.generated.splice(idx, 1);
+  if (S.previewIdx === idx) closeSidePreview();
+  if (S.previewIdx > idx) S.previewIdx--;
+  document.getElementById('gen-count').textContent = S.generated.length;
+  renderGenList();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EVERGREEN HELPERS
+// ═══════════════════════════════════════════════════════════════
+function getTopicalSpec() {
+  var team = document.getElementById('sel-team').value;
+  var typeId = document.getElementById('sel-type').value;
+  var tmpl = TOPICAL_TMPLS.filter(function(t){ return t.id === typeId; })[0];
+  return {
+    slug: typeId + '-' + team.toLowerCase().replace(/\s+/g, '-') + '-' + TODAY_ISO,
+    title: tmpl.title(team, MONTH, YEAR),
+    category: tmpl.category,
+    keywords: tmpl.keywords(team),
+    team: team,
+    typeId: typeId,
+    isTopical: true
+  };
+}
+
+function updateTopicalPreview() {
+  var spec = getTopicalSpec();
+  var el = document.getElementById('topical-preview');
+  el.textContent = spec.title;
+  el.className = S.selected['__topical__'] ? 'queued' : '';
+}
+
+function toggleTopical() {
+  if (S.selected['__topical__']) { delete S.selected['__topical__']; }
+  else { S.selected['__topical__'] = true; }
+  var btn = document.getElementById('topical-btn');
+  if (S.selected['__topical__']) { btn.textContent = 'In Queue'; btn.className = 'btn btn-success'; }
+  else { btn.textContent = '+ Add to Queue'; btn.className = 'btn btn-ghost'; }
+  updateTopicalPreview();
+  refreshBottomBar();
+}
+
+function renderEgList() {
+  var list = document.getElementById('eg-list');
+  list.innerHTML = '';
+  EVERGREEN.forEach(function(t) {
+    var col = catCol(t.category);
+    var isSel = !!S.selected[t.slug];
+    var row = document.createElement('div');
+    row.className = 'topic-row' + (isSel ? ' sel' : '');
+    row.innerHTML =
+      '<div class="chk' + (isSel ? ' on' : '') + '">' + (isSel ? '&#10003;' : '') + '</div>'
+      + '<span class="topic-label">' + t.title + '</span>'
+      + '<span class="pill-cat" style="background:' + col[0] + ';color:' + col[1] + '">' + t.category + '</span>';
+    row.onclick = function() { toggleEg(t.slug); };
+    list.appendChild(row);
+  });
+}
+
+function toggleEg(slug) {
+  if (S.selected[slug]) { delete S.selected[slug]; }
+  else { S.selected[slug] = true; }
+  renderEgList();
+  refreshBottomBar();
+}
+
+function renderBatchBtns() {
+  var wrap = document.getElementById('batch-btns');
+  wrap.innerHTML = '';
+  [1,2,3,5].forEach(function(n) {
+    var b = document.createElement('button');
+    b.className = 'bb' + (S.batchSize === n ? ' on' : '');
+    b.textContent = n;
+    b.onclick = function() { S.batchSize = n; renderBatchBtns(); refreshBottomBar(); };
+    wrap.appendChild(b);
+  });
+}
+
+function refreshBottomBar() {
+  var count = Object.keys(S.selected).length;
+  var willRun = Math.min(count, S.batchSize);
+  var est = willRun * getEstSecs();
+  var statusEl = document.getElementById('sel-status');
+  statusEl.textContent = count ? count + ' selected · ~' + formatSecs(est) : 'Select topics above';
+  var btn = document.getElementById('eg-gen-btn');
+  btn.disabled = !count || S.generating;
+  btn.textContent = count ? 'Generate ' + willRun + ' Article(s)' : 'Generate';
+}
+
+function formatSecs(s) {
+  var m = Math.floor(s / 60); var sec = s % 60;
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function setLength(mode) {
+  S.articleLength = mode;
+  var modeMap = { standard: 'Standard', medium: 'Medium', longform: 'Long-form', custom: 'Custom' };
+  document.querySelectorAll('.len-btn').forEach(function(b) {
+    b.classList.toggle('active', b.textContent === modeMap[mode]);
+  });
+  var cwc = document.getElementById('custom-word-count');
+  if (cwc) cwc.style.display = mode === 'custom' ? 'inline-block' : 'none';
+  updateCostEstimate();
+  refreshBottomBar();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SOURCE FILE UPLOAD (trusted article)
+// ═══════════════════════════════════════════════════════════════
+var SOURCE_UPLOAD_TEXT = '';
+
+function handleSourceUpload(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var key = 'source-upload';
+
+  // Reuse the existing file handler but also show the expand panel
+  handleFileUpload(input, key);
+
+  // Poll for completion (handleFileUpload is async)
+  var check = setInterval(function() {
+    if (S.uploadedContext[key] && S.uploadedContext[key].text) {
+      clearInterval(check);
+      SOURCE_UPLOAD_TEXT = S.uploadedContext[key].text;
+      document.getElementById('source-upload-preview').style.display = 'block';
+      document.getElementById('source-upload-preview').textContent = SOURCE_UPLOAD_TEXT.slice(0, 500) + (SOURCE_UPLOAD_TEXT.length > 500 ? '...' : '');
+      document.getElementById('source-upload-expand').style.display = 'block';
+      document.getElementById('source-upload-area').textContent = S.uploadedContext[key].name + ' (' + SOURCE_UPLOAD_TEXT.length + ' chars)';
+      document.getElementById('source-upload-area').classList.add('has-file');
+    }
+  }, 300);
+}
+
+function generateFromUpload() {
+  if (!SOURCE_UPLOAD_TEXT || SOURCE_UPLOAD_TEXT.length < 50) {
+    alert('Please upload a source article first.');
+    return;
+  }
+  var category = document.getElementById('source-cat').value;
+  var sportId = document.getElementById('source-sport').value;
+  var notes = document.getElementById('source-extra-notes').value || '';
+  var pipelineEl = document.getElementById('source-pipeline');
+  pipelineEl.style.display = 'flex';
+
+  // Temporarily switch sport context if different
+  var prevSport = ACTIVE_SPORT;
+  if (sportId !== ACTIVE_SPORT) {
+    ACTIVE_SPORT = sportId;
+    SITE_URL = getSiteUrl();
+    SRC_LABELS = getSrcLabels();
+  }
+
+  // Extract headline from first line
+  var lines = SOURCE_UPLOAD_TEXT.split('\n').filter(function(l) { return l.trim(); });
+  var title = lines[0].slice(0, 120);
+
+  runArticlePipeline({
+    title: title,
+    sourceText: SOURCE_UPLOAD_TEXT,
+    category: category,
+    source: 'custom',
+    extraContext: notes ? 'EDITOR NOTES: ' + notes : '',
+    pipelineEl: pipelineEl,
+    trustedSource: true  // skip heavy QC on source facts
+  });
+
+  // Restore sport after pipeline starts (it captures ACTIVE_SPORT at call time)
+  if (prevSport !== sportId) {
+    // Don't restore — the article should use the selected sport's prompts
+  }
+}
+
+function updateSourceCats() {
+  var sportId = document.getElementById('source-sport').value;
+  var cats = (SPORTS[sportId] || SPORTS.football).categories;
+  var sel = document.getElementById('source-cat');
+  sel.innerHTML = '';
+  cats.forEach(function(c) {
+    var o = document.createElement('option');
+    o.value = o.textContent = c;
+    sel.appendChild(o);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CUSTOM TOPIC
+// ═══════════════════════════════════════════════════════════════
+function generateFromCustom() {
+  var title = document.getElementById('custom-title').value.trim();
+  var desc = document.getElementById('custom-desc').value.trim();
+  if (!title) { alert('Please enter an article title.'); return; }
+
+  var category = document.getElementById('custom-cat').value;
+  var sportId = document.getElementById('custom-sport').value;
+  var extra = S.uploadedContext['custom'] ? S.uploadedContext['custom'].text : '';
+  if (desc) extra = (extra ? extra + '\n\n' : '') + 'ARTICLE BRIEF: ' + desc;
+
+  var pipelineEl = document.getElementById('custom-pipeline');
+  pipelineEl.style.display = 'flex';
+
+  // Switch sport context if needed
+  var prevSport = ACTIVE_SPORT;
+  if (sportId !== ACTIVE_SPORT) {
+    ACTIVE_SPORT = sportId;
+    SITE_URL = getSiteUrl();
+    SRC_LABELS = getSrcLabels();
+  }
+
+  showPipeline(pipelineEl, 'write');
+  addLog('Custom topic: ' + title);
+
+  var articleLength = S.articleLength;
+  var baseTokens = getTokenLimit();
+
+  var spec = {
+    slug: 'custom-' + TODAY_ISO + '-' + Math.random().toString(36).slice(2, 6),
+    title: title,
+    category: category,
+    keywords: [title.split(':')[0].trim(), category].filter(Boolean),
+    team: '',
+    typeId: 'custom',
+    isTopical: true,
+    source: 'custom'
+  };
+
+  var writePrompt = buildPrompt(spec, desc || '', articleLength, extra);
+  S.generating = true;
+
+  callLLM(getSystemPrompt(), writePrompt, baseTokens)
+    .then(function(draft) {
+      showPipeline(pipelineEl, 'qc');
+      addLog('QC + SEO...', 'ok');
+      return Promise.all([
+        qualityCheck(spec, draft, desc || ''),
+        genSeoFields(spec)
+      ]).then(function(r) { return { draft: draft, qc: r[0], seo: r[1] }; });
+    })
+    .then(function(r) {
+      var body = r.draft;
+      if (r.qc.verdict === 'FAIL' && r.qc.issues.length > 0) {
+        return rewriteWithFixes(spec, body, desc || '', r.qc)
+          .then(function(fb) { return { body: fb.trim(), qc: r.qc, seo: r.seo, wasRewritten: true }; })
+          .catch(function() { return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false }; });
+      }
+      return { body: body.trim(), qc: r.qc, seo: r.seo, wasRewritten: false };
+    })
+    .then(function(r) {
+      showPipeline(pipelineEl, 'eeat');
+      addLog('E-E-A-T polish...', 'ok');
+      return eeatPolish(spec, r.body, desc || '')
+        .then(function(polished) { return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten }; })
+        .catch(function() { return r; });
+    })
+    .then(function(result) {
+      showPipeline(pipelineEl, 'done');
+      spec.title = result.seo.h1 || spec.title;
+      var wp = buildWpBlock(spec, result.body, result.seo);
+      S.generated.push({
+        spec: spec, wp: wp, seo: result.seo, status: 'done',
+        articleLength: articleLength, qc: result.qc,
+        wasRewritten: result.wasRewritten || false, eeatPolished: true
+      });
+      document.getElementById('gen-count').textContent = S.generated.length;
+      addLog('Custom article complete: ' + spec.title, 'ok');
+      renderGenList();
+    })
+    .catch(function(e) {
+      showPipeline(pipelineEl, 'error');
+      addLog('Custom topic failed: ' + e.message, 'err');
+    })
+    .finally(function() {
+      S.generating = false;
+      // Restore sport if changed
+      if (prevSport !== sportId) {
+        ACTIVE_SPORT = prevSport;
+        SITE_URL = getSiteUrl();
+        SRC_LABELS = getSrcLabels();
+      }
+    });
+}
+
+function updateCustomCats() {
+  var sportId = document.getElementById('custom-sport').value;
+  var cats = (SPORTS[sportId] || SPORTS.football).categories;
+  var sel = document.getElementById('custom-cat');
+  sel.innerHTML = '';
+  cats.forEach(function(c) {
+    var o = document.createElement('option');
+    o.value = o.textContent = c;
+    sel.appendChild(o);
+  });
+}
+
+function populateSportDropdowns() {
+  var dropdowns = ['source-sport', 'custom-sport'];
+  dropdowns.forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '';
+    SPORT_ORDER.forEach(function(sid) {
+      var o = document.createElement('option');
+      o.value = sid;
+      o.textContent = SPORTS[sid].icon + ' ' + SPORTS[sid].label;
+      if (sid === ACTIVE_SPORT) o.selected = true;
+      sel.appendChild(o);
+    });
+  });
+  updateSourceCats();
+  updateCustomCats();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPORT SWITCHING
+// ═══════════════════════════════════════════════════════════════
+function renderSportBar() {
+  var bar = document.getElementById('sport-bar');
+  bar.innerHTML = '';
+  SPORT_ORDER.forEach(function(sid) {
+    var s = SPORTS[sid];
+    var btn = document.createElement('button');
+    btn.className = 'sport-btn' + (sid === ACTIVE_SPORT ? ' active' : '');
+    btn.innerHTML = '<span class="sport-icon">' + s.icon + '</span><span class="sport-label">' + s.label + '</span>';
+    btn.onclick = function() { switchSport(sid); };
+    bar.appendChild(btn);
+  });
+}
+
+function renderFilterBar() {
+  var sport = SPORTS[ACTIVE_SPORT];
+  var bar = document.querySelector('.filter-bar');
+  if (!bar) return;
+  // Keep only the refresh button
+  bar.innerHTML = '';
+  // All button
+  var allBtn = document.createElement('button');
+  allBtn.className = 'filter-btn active';
+  allBtn.dataset.source = 'all';
+  allBtn.textContent = 'All';
+  allBtn.onclick = function() { filterFeed('all'); };
+  bar.appendChild(allBtn);
+  // Source buttons
+  sport.rssSources.forEach(function(src) {
+    var label = sport.srcLabels[src] || src;
+    var btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.dataset.source = src;
+    btn.textContent = label;
+    btn.onclick = function() { filterFeed(src); };
+    bar.appendChild(btn);
+  });
+  // Spacer + refresh
+  var spacer = document.createElement('div');
+  spacer.style.flex = '1';
+  bar.appendChild(spacer);
+  var refresh = document.createElement('button');
+  refresh.className = 'btn btn-ghost sm';
+  refresh.textContent = 'Refresh';
+  refresh.onclick = function() { loadFeeds(); };
+  bar.appendChild(refresh);
+}
+
+function renderCategoryDropdowns() {
+  var sport = SPORTS[ACTIVE_SPORT];
+  var cats = sport.categories;
+  // Update all category selects on the page
+  document.querySelectorAll('[id^="feed-cat-"], #url-cat').forEach(function(sel) {
+    var prev = sel.value;
+    sel.innerHTML = '';
+    cats.forEach(function(c) {
+      var o = document.createElement('option');
+      o.value = o.textContent = c;
+      sel.appendChild(o);
+    });
+    if (cats.indexOf(prev) >= 0) sel.value = prev;
+  });
+}
+
+function rebuildEntityDropdown() {
+  var selTeam = document.getElementById('sel-team');
+  selTeam.innerHTML = '';
+  TEAM_GROUPS.forEach(function(g) {
+    var grp = document.createElement('optgroup');
+    grp.label = g.group;
+    (g.items || g.teams || []).forEach(function(t) {
+      var o = document.createElement('option');
+      o.value = o.textContent = t;
+      grp.appendChild(o);
+    });
+    selTeam.appendChild(grp);
+  });
+  // Update label
+  var label = SPORTS[ACTIVE_SPORT].entityLabel || 'Team / Subject';
+  var lbl = selTeam.closest('.ctrl');
+  if (lbl) { var lblEl = lbl.querySelector('label'); if (lblEl) lblEl.textContent = label; }
+}
+
+function rebuildTypeDropdown() {
+  var selType = document.getElementById('sel-type');
+  selType.innerHTML = '';
+  TOPICAL_TMPLS.forEach(function(t) {
+    var o = document.createElement('option');
+    o.value = t.id; o.textContent = t.label;
+    selType.appendChild(o);
+  });
+}
+
+function switchSport(sportId) {
+  if (sportId === ACTIVE_SPORT) return;
+  ACTIVE_SPORT = sportId;
+
+  // Update derived globals
+  SITE_URL = getSiteUrl();
+  EVERGREEN = SPORTS[ACTIVE_SPORT].evergreen;
+  TOPICAL_TMPLS = SPORTS[ACTIVE_SPORT].topicalTemplates;
+  TEAM_GROUPS = SPORTS[ACTIVE_SPORT].entityGroups;
+  SRC_LABELS = getSrcLabels();
+
+  // Update UI
+  document.getElementById('h-sub').textContent = SPORTS[ACTIVE_SPORT].subtitle;
+  renderSportBar();
+  renderFilterBar();
+  renderCategoryDropdowns();
+  rebuildEntityDropdown();
+  rebuildTypeDropdown();
+  renderEgList();
+  updateTopicalPreview();
+  refreshBottomBar();
+  populateSportDropdowns();
+  S.feedFilter = 'all';
+  S.selectedFeedIdx = -1;
+
+  // Reload feeds for new sport
+  if (PROXY_URL.indexOf('your-subdomain') < 0) {
+    loadFeeds();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+(function init() {
+  renderSportBar();
+  rebuildEntityDropdown();
+  rebuildTypeDropdown();
+  initModelDropdown();
+  updateTopicalPreview();
+  renderEgList();
+  renderBatchBtns();
+  refreshBottomBar();
+  renderFilterBar();
+  renderCategoryDropdowns();
+  populateSportDropdowns();
+
+  // Load RSS feeds
+  if (PROXY_URL.indexOf('your-subdomain') < 0) {
+    loadFeeds();
+  } else {
+    document.getElementById('feed-loading').innerHTML =
+      '<div style="color:#fbbf24;">Configure your PROXY_URL at the top of this file to load news feeds.</div>';
+  }
+})();
+</script>
+</body>
+</html>
