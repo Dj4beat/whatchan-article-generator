@@ -1407,11 +1407,22 @@ function handleFileUpload(input, key) {
       pdfjsLib.getDocument(typedArray).promise.then(function(pdf) {
         var pages = [];
         var total = pdf.numPages;
+        if (area) area.textContent = 'Reading ' + total + ' pages...';
         function readPage(n) {
           if (n > total) {
             var text = pages.join('\n\n').replace(/\s{3,}/g, '\n\n').trim();
+            if (text.length < 50 && total > 0) {
+              // Image-based PDF — no text layer
+              if (area) {
+                area.textContent = file.name + ' — image-based PDF (no text). Try saving as .txt or .docx.';
+                area.style.color = '#f87171';
+                area.style.borderColor = '#dc2626';
+              }
+              addLog('PDF upload: "' + file.name + '" has no text layer (likely scanned/image PDF). Extract the text and save as .txt instead.', 'err');
+              return;
+            }
             S.uploadedContext[key] = { name: file.name, text: text };
-            if (area) { area.textContent = file.name + ' (' + text.length + ' chars)'; area.classList.add('has-file'); }
+            if (area) { area.textContent = file.name + ' (' + text.length + ' chars)'; area.classList.add('has-file'); area.style.color = ''; area.style.borderColor = ''; }
             return;
           }
           pdf.getPage(n).then(function(page) {
@@ -1419,9 +1430,12 @@ function handleFileUpload(input, key) {
               pages.push(tc.items.map(function(i){ return i.str; }).join(' '));
               readPage(n + 1);
             });
-          });
+          }).catch(function() { readPage(n + 1); });
         }
         readPage(1);
+      }).catch(function(e) {
+        if (area) { area.textContent = 'PDF error: ' + e.message; area.style.color = '#f87171'; }
+        addLog('PDF failed to open: ' + e.message, 'err');
       });
     };
     reader.readAsArrayBuffer(file);
