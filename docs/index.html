@@ -7,6 +7,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://unpkg.com/html-docx-js@0.3.1/dist/html-docx.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -298,6 +299,17 @@
     .kp-found { color: #4ade80; font-size: .7rem; flex-shrink: 0; white-space: nowrap; }
     .kp-missing { color: #f87171; font-size: .7rem; flex-shrink: 0; white-space: nowrap; }
 
+    /* ── White label bar ── */
+    .wl-bar { background: #0c1a2e; border: 1px solid #1e3a5f; border-radius: 10px; padding: 10px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .wl-toggle-label { display: flex; align-items: center; gap: 7px; cursor: pointer; color: #7dd3fc; font-size: .82rem; font-weight: 600; white-space: nowrap; user-select: none; }
+    .wl-toggle-label input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: #3b82f6; }
+    .wl-options { display: none; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap; }
+    .wl-options.vis { display: flex; }
+    .wl-field { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 160px; }
+    .wl-field label { font-size: .68rem; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .wl-field input { padding: 5px 9px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: .8rem; }
+    .wl-note { font-size: .7rem; color: #475569; }
+
     /* ── QC panel ── */
     .qc-panel {
       background: #0c1220; border: 1px solid #1e293b; border-radius: 7px;
@@ -417,6 +429,25 @@
         <button class="len-btn" onclick="setLength('custom')">Custom</button>
         <input type="number" id="custom-word-count" min="200" max="10000" step="100" value="1000" placeholder="words" style="display:none;width:80px;padding:4px 8px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:#e2e8f0;font-size:0.8rem;" onchange="S.customWordCount=Math.max(200,Math.min(10000,parseInt(this.value)||1000));updateCostEstimate();refreshBottomBar();">
       </div>
+    </div>
+  </div>
+
+  <!-- ── White Label bar ── -->
+  <div class="wl-bar">
+    <label class="wl-toggle-label">
+      <input type="checkbox" id="wl-active" onchange="toggleWl()">
+      White Label
+    </label>
+    <div class="wl-options" id="wl-options">
+      <div class="wl-field">
+        <label>Domain</label>
+        <input type="text" id="wl-domain" placeholder="example.com">
+      </div>
+      <div class="wl-field">
+        <label>Author name <span style="color:#334155;font-weight:400;">(blank = anonymous)</span></label>
+        <input type="text" id="wl-author" placeholder="Leave blank for no author credit">
+      </div>
+      <span class="wl-note">Banners removed &middot; Schema uses your domain &middot; WhatChan branding stripped</span>
     </div>
   </div>
 
@@ -1145,6 +1176,8 @@ var S = {
   uploadedContext: {},      // key -> { name, text }
 };
 
+var CURRENT_WL     = null;   // set at the start of each generation run
+
 var STORAGE_KEY    = 'wc_articles_v1';
 var SEVEN_DAYS_MS  = 7 * 24 * 60 * 60 * 1000;
 
@@ -1171,6 +1204,21 @@ function loadArticles() {
   } catch(e) {
     S.generated = [];
   }
+}
+
+function getWlOptions() {
+  var cb = document.getElementById('wl-active');
+  if (!cb || !cb.checked) return null;
+  return {
+    domain: (document.getElementById('wl-domain').value || '').trim(),
+    author: (document.getElementById('wl-author').value || '').trim(),
+    noBanners: true
+  };
+}
+function toggleWl() {
+  var opts = document.getElementById('wl-options');
+  var cb   = document.getElementById('wl-active');
+  if (opts) opts.classList.toggle('vis', cb && cb.checked);
 }
 
 function formatSavedDate(ts) {
@@ -1549,9 +1597,18 @@ function getSystemPrompt() {
     + '- NEVER reproduce a quote that is truncated or cut off. A truncated quote ends with "..." or cuts off mid-word/mid-sentence. If a quote in your source ends with "..." it was cut off by the feed — omit it entirely or paraphrase the sentiment without using quotation marks. A published article must only contain complete, coherent quotes.\n'
     + '- Write around gaps — a thinner accurate article is better than a full hallucinated one\n\n'
     + 'AUTHOR & BYLINE:\n'
-    + '- This article is written by ' + AUTHOR.name + ', WhatChan ' + sport.label + ' writer\n'
-    + '- Do NOT invent analyst names, reporter names, or any other fictional bylines\n'
-    + '- The only author credit should be: ' + AUTHOR.name + '\n\n'
+    + (CURRENT_WL
+        ? (CURRENT_WL.author
+            ? '- This article is written by ' + CURRENT_WL.author + '\n'
+              + '- Do NOT invent analyst names, reporter names, or any other fictional bylines\n'
+              + '- The only author credit should be: ' + CURRENT_WL.author + '\n'
+              + '- Do NOT mention WhatChan anywhere in this article — it is published independently\n\n'
+            : '- Do NOT include any author byline, editor\'s note with author info, or author credit anywhere in the output\n'
+              + '- Do NOT include a wc-editors-note section\n'
+              + '- Do NOT mention WhatChan anywhere in this article\n\n')
+        : '- This article is written by ' + AUTHOR.name + ', WhatChan ' + sport.label + ' writer\n'
+          + '- Do NOT invent analyst names, reporter names, or any other fictional bylines\n'
+          + '- The only author credit should be: ' + AUTHOR.name + '\n\n')
     + 'WRITING RULES:\n'
     + '- British English throughout (colour, programme, licence, organised, analyse, etc.)\n'
     + '- Tone: informed, warm, direct — like a trusted ' + sportLabel + ' journalist talking to a fan\n'
@@ -1739,8 +1796,9 @@ function buildPrompt(spec, ctx, articleLength, extraContext) {
 //  SCHEMA + WP BLOCK
 // ═══════════════════════════════════════════════════════════════
 function buildWpBlock(spec, body, seo) {
-  var siteUrl = getSiteUrl();
-  var blogUrl = siteUrl + '/whatchan-blog-posts';
+  var wl = CURRENT_WL;
+  var siteUrl = wl && wl.domain ? 'https://' + wl.domain : getSiteUrl();
+  var blogUrl = siteUrl + (wl ? '/blog' : '/whatchan-blog-posts');
   var articleUrl = blogUrl + '/' + (seo.urlSlug || spec.slug);
 
   // Schema.org Article
@@ -1750,11 +1808,16 @@ function buildWpBlock(spec, body, seo) {
     'description': seo.metaDesc,
     'url': articleUrl,
     'datePublished': TODAY_ISO, 'dateModified': TODAY_ISO,
-    'author': { '@type': 'Person', 'name': AUTHOR.name, 'url': AUTHOR.profile },
-    'publisher': { '@type': 'Organization', 'name': SITE_NAME, 'url': siteUrl, 'logo': { '@type': 'ImageObject', 'url': siteUrl + '/logo.png' } },
+    'publisher': { '@type': 'Organization', 'name': wl && wl.domain ? wl.domain : SITE_NAME, 'url': siteUrl, 'logo': { '@type': 'ImageObject', 'url': siteUrl + '/logo.png' } },
     'image': siteUrl + '/logo.png',
     'mainEntityOfPage': { '@type': 'WebPage', '@id': articleUrl }
   };
+  // Author in schema — omit entirely for anonymous white label
+  if (wl && wl.author) {
+    articleSchema['author'] = { '@type': 'Person', 'name': wl.author };
+  } else if (!wl) {
+    articleSchema['author'] = { '@type': 'Person', 'name': AUTHOR.name, 'url': AUTHOR.profile };
+  }
 
   // Schema.org Breadcrumb
   var breadcrumb = {
@@ -1789,13 +1852,14 @@ function buildWpBlock(spec, body, seo) {
   seoBlock += '  Keywords: ' + (seo.allKeywords || spec.keywords).join(', ') + '\n';
   seoBlock += '-->';
 
-  // Sport banner — inserted mid-article between sections
-  var sportBanner = buildBannerHtml(SPORT_BANNERS[ACTIVE_SPORT] || SPORT_BANNERS.football);
-  // Blog banner — bottom of article
-  var blogBannerHtml = buildBannerHtml(BLOG_BANNER);
+  // Sport banner — inserted mid-article (suppressed for white label)
+  var sportBanner = (!wl) ? buildBannerHtml(SPORT_BANNERS[ACTIVE_SPORT] || SPORT_BANNERS.football) : '';
+  // Blog banner — bottom of article (suppressed for white label)
+  var blogBannerHtml = (!wl) ? buildBannerHtml(BLOG_BANNER) : '';
 
   // Split body at nearest <h2> to the midpoint for natural banner placement
   function insertMidBanner(bodyHtml, bannerHtml) {
+    if (!bannerHtml) return bodyHtml;
     var h2positions = [];
     var re = /<h2[\s>]/gi;
     var m;
@@ -2124,9 +2188,10 @@ function runArticlePipeline(opts) {
   var articleLength = S.articleLength;
   var baseTokens = getTokenLimit();
   var pipe = opts.pipelineEl;
+  CURRENT_WL = getWlOptions();
   S.generating = true;
 
-  addLog('Starting pipeline: ' + spec.title);
+  addLog('Starting pipeline: ' + spec.title + (CURRENT_WL ? ' [White Label]' : ''));
 
   // ── Step 0: Web research — verify current facts before writing ──
   showPipeline(pipe, 'research');
@@ -2266,7 +2331,7 @@ function runArticlePipeline(opts) {
         spec: spec, wp: wp, seo: result.seo, status: 'done',
         articleLength: articleLength, qc: result.qc,
         wasRewritten: result.wasRewritten, eeatPolished: true,
-        needsReview: result.needsReview, savedAt: Date.now()
+        needsReview: result.needsReview, savedAt: Date.now(), wlOptions: CURRENT_WL
       });
       saveArticles();
       document.getElementById('gen-count').textContent = S.generated.length;
@@ -2325,9 +2390,10 @@ function runEgGenerate() {
   });
   if (!specs.length) return;
 
+  CURRENT_WL = getWlOptions();
   S.generating = true;
   showTab('gen');
-  addLog('Generating ' + specs.length + ' evergreen article(s)...');
+  addLog('Generating ' + specs.length + ' evergreen article(s)...' + (CURRENT_WL ? ' [White Label]' : ''));
 
   var idx = 0;
   function next() {
@@ -2374,7 +2440,7 @@ function runEgGenerate() {
           spec: spec, wp: wp, seo: result.seo, status: 'done',
           articleLength: articleLength, qc: result.qc,
           wasRewritten: result.wasRewritten || false, eeatPolished: true,
-          savedAt: Date.now()
+          savedAt: Date.now(), wlOptions: CURRENT_WL
         });
         saveArticles();
         document.getElementById('gen-count').textContent = S.generated.length;
@@ -2427,6 +2493,7 @@ function renderGenList() {
       +     '<span class="pill-cat" style="background:' + col[0] + ';color:' + col[1] + '">' + g.spec.category + '</span>'
       +     srcBadge
       +     '<span class="pill-cat" style="background:#1e2d3d;color:#64748b;border:1px solid #263354">' + (g.articleLength || 'standard') + '</span>'
+      +     (g.wlOptions ? '<span class="pill-cat" style="background:#0c1a2e;color:#7dd3fc;border:1px solid #1e3a5f;">White Label</span>' : '')
       +   '</div>'
       +   '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + reviewBadge + qcBadge + eatBadge + rewriteBadge + '</div>'
       + '</div>'
@@ -2438,6 +2505,7 @@ function renderGenList() {
       +   '<button class="btn btn-ghost sm" onclick="openTab(' + i + ')">New Tab</button>'
       +   '<button class="btn btn-ghost sm" onclick="toggleSeo(' + i + ')">SEO</button>'
       +   '<button class="btn btn-ghost sm" onclick="toggleQc(' + i + ')">QC Details</button>'
+      +   '<button class="btn btn-ghost sm" onclick="downloadDocx(' + i + ')" title="Download as Word document">DOCX</button>'
       +   '<button class="btn btn-ghost sm" style="color:#f87171;" onclick="deleteArticle(' + i + ')">Delete</button>'
       + '</div>'
       + '<div class="seo-panel" id="seo-panel-' + i + '">'
@@ -2546,6 +2614,60 @@ function closeSidePreview() {
 
 function sideCopy() {
   if (S.previewIdx >= 0) copyWp(S.previewIdx);
+}
+
+function buildCleanHtml(wp) {
+  var h = wp;
+  // Strip SEO comment block
+  h = h.replace(/<!--\s*SEO DATA[\s\S]*?-->/g, '');
+  // Strip JSON-LD script blocks
+  h = h.replace(/<script[^>]*type="application\/ld\+json"[\s\S]*?<\/script>/gi, '');
+  // Strip style blocks
+  h = h.replace(/<style[\s\S]*?<\/style>/gi, '');
+  // Strip HTML comments
+  h = h.replace(/<!--[\s\S]*?-->/g, '');
+  // Strip banner divs (wc-banner class)
+  h = h.replace(/<div[^>]*class="[^"]*wc-banner[^"]*"[^>]*>[\s\S]*?<\/div>\s*/gi, '');
+  // Strip tag strip
+  h = h.replace(/<div[^>]*class="[^"]*wc-tags[^"]*"[^>]*>[\s\S]*?<\/div>\s*/gi, '');
+  // Strip stats strip
+  h = h.replace(/<div[^>]*class="[^"]*wc-stats-strip[^"]*"[^>]*>[\s\S]*?<\/div>\s*/gi, '');
+  // Convert pullquote to blockquote
+  h = h.replace(/<div[^>]*class="[^"]*wc-pullquote[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, '<blockquote>$1</blockquote>');
+  // Convert editors-note to simple italic paragraph
+  h = h.replace(/<div[^>]*class="[^"]*wc-editors-note[^"]*"[^>]*>([\s\S]*?)<\/div>/gi, '<p><em>$1</em></p>');
+  // Strip wc-post wrapper divs and other class divs
+  h = h.replace(/<div[^>]*class="[^"]*"[^>]*>/gi, '').replace(/<\/div>/gi, '');
+  // Strip remaining class and style attributes
+  h = h.replace(/\s*class="[^"]*"/g, '').replace(/\s*style="[^"]*"/g, '');
+  // Clean up excess whitespace
+  h = h.replace(/\n{3,}/g, '\n\n').trim();
+  return h;
+}
+
+function downloadDocx(idx) {
+  var g = S.generated[idx];
+  if (!g || !g.wp) return;
+  if (typeof htmlDocx === 'undefined') {
+    alert('DOCX library not loaded yet — please wait a moment and try again.');
+    return;
+  }
+  var title = (g.seo ? g.seo.h1 : g.spec.title) || 'article';
+  var cleanBody = buildCleanHtml(g.wp);
+  var fullHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title.replace(/</g,'&lt;') + '</title>'
+    + '<style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.6;max-width:800px;margin:40px auto;color:#111;}'
+    + 'h1{font-size:18pt;}h2{font-size:14pt;}blockquote{border-left:3px solid #ccc;margin:12px 0;padding:4px 16px;color:#555;}'
+    + 'p{margin:8px 0;}</style>'
+    + '</head><body>' + cleanBody + '</body></html>';
+  var blob = htmlDocx.asBlob(fullHtml);
+  var slug = (g.seo && g.seo.urlSlug ? g.seo.urlSlug : title).slice(0, 60).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = slug + '.docx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
 
 function copyWp(idx) {
@@ -2830,6 +2952,7 @@ function generateFromCustom() {
   };
 
   var writePrompt = buildPrompt(spec, desc || '', articleLength, extra);
+  CURRENT_WL = getWlOptions();
   S.generating = true;
 
   callLLM(getSystemPrompt(), writePrompt, baseTokens)
@@ -2865,7 +2988,7 @@ function generateFromCustom() {
         spec: spec, wp: wp, seo: result.seo, status: 'done',
         articleLength: articleLength, qc: result.qc,
         wasRewritten: result.wasRewritten || false, eeatPolished: true,
-        savedAt: Date.now()
+        savedAt: Date.now(), wlOptions: CURRENT_WL
       });
       saveArticles();
       document.getElementById('gen-count').textContent = S.generated.length;
