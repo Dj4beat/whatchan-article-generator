@@ -563,6 +563,15 @@
           &#9889; Match Preview &amp; Match Report trigger deep Perplexity research + stats
         </div>
       </div>
+      <!-- URL context row — shown when Football is selected -->
+      <div class="ctrl-row" id="custom-url-row" style="display:none;margin-bottom:10px;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="ctrl" style="flex:1;min-width:260px;">
+          <label>URL Context (optional — match report, stats page, broadcaster listing)</label>
+          <input type="text" id="custom-url-input" class="text-input" placeholder="https://bbc.co.uk/sport/... or live-footballontv.com listing" style="width:100%;" />
+        </div>
+        <button class="btn btn-ghost sm" onclick="fetchCustomUrl()" style="align-self:flex-end;">Fetch URL</button>
+        <div id="custom-url-status" style="font-size:.77rem;font-family:system-ui,sans-serif;align-self:flex-end;padding-bottom:2px;min-width:200px;color:#94a3b8;"></div>
+      </div>
       <button class="btn btn-primary" onclick="generateFromCustom()">Generate WhatChan Article</button>
       <div id="custom-pipeline" class="pipeline-bar" style="display:none;"></div>
     </div>
@@ -1168,7 +1177,7 @@ function preResearchMatch(team, typeId) {
       + '7. HEAD-TO-HEAD: Last 5 meetings between these sides — result, venue, competition, standout moments\n'
       + '8. MANAGER — ' + team + ': Full name (confirmed, currently in post)\n'
       + '9. MANAGER — Opponent: Full name (confirmed, currently in post)\n'
-      + '10. HOW TO WATCH: UK TV channel and/or streaming service, kick-off time\n\n'
+      + '10. HOW TO WATCH: Check live-footballontv.com for the exact UK TV channel(s) broadcasting this match. State the channel name, kick-off time (GMT/BST), and any streaming options (Sky Go, Amazon Prime Video, iPlayer, ITVX, etc.)\n\n'
       + 'Start your response with: "MATCH PREVIEW RESEARCH — ' + team + ':"\n'
       + 'Only include facts you can confirm from current web sources. No speculation.';
   } else {
@@ -3085,6 +3094,7 @@ function generateFromCustom() {
     else if (category === 'Match Reports') matchTypeId = 'review';
   }
   var extra = S.uploadedContext['custom'] ? S.uploadedContext['custom'].text : '';
+  if (S.uploadedContext['custom-url']) extra = (extra ? extra + '\n\n---\n\n' : '') + 'URL CONTEXT:\n' + S.uploadedContext['custom-url'].text;
   if (desc) extra = (extra ? extra + '\n\n' : '') + 'ARTICLE BRIEF: ' + desc;
 
   var pipelineEl = document.getElementById('custom-pipeline');
@@ -3269,10 +3279,13 @@ function updateCustomCats() {
     o.value = o.textContent = c;
     sel.appendChild(o);
   });
-  // Show club dropdown only when Football is selected
+  // Show club + URL rows only when Football is selected
+  var isFootball = sportId === 'football';
   var clubRow = document.getElementById('custom-club-row');
-  if (clubRow) clubRow.style.display = sportId === 'football' ? 'flex' : 'none';
-  if (sportId === 'football') rebuildCustomClubDropdown();
+  var urlRow = document.getElementById('custom-url-row');
+  if (clubRow) clubRow.style.display = isFootball ? 'flex' : 'none';
+  if (urlRow) urlRow.style.display = isFootball ? 'flex' : 'none';
+  if (isFootball) rebuildCustomClubDropdown();
 }
 
 function rebuildCustomClubDropdown() {
@@ -3296,6 +3309,31 @@ function rebuildCustomClubDropdown() {
     sel.appendChild(grp);
   });
   if (prev) sel.value = prev;
+}
+
+// Fetch a URL pasted into the Custom Topic URL field and store as context
+function fetchCustomUrl() {
+  var input = document.getElementById('custom-url-input');
+  var status = document.getElementById('custom-url-status');
+  var url = (input ? input.value : '').trim();
+  if (!url) { if (status) status.textContent = 'Enter a URL first.'; return; }
+  if (status) status.textContent = 'Fetching...';
+  fetch(PROXY_URL + '/api/fetch-article', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
+    body: JSON.stringify({ articleUrl: url })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    var text = data.text || '';
+    if (text.length < 20) throw new Error('No usable text extracted');
+    S.uploadedContext['custom-url'] = { name: data.title || url, text: text };
+    if (status) status.innerHTML = '<span style="color:#86efac;">&#10003; ' + escHtml((data.title || url).slice(0, 70)) + ' (' + text.length + ' chars)</span>';
+  })
+  .catch(function(e) {
+    if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + e.message + '</span>';
+  });
 }
 
 function populateSportDropdowns() {
