@@ -122,6 +122,12 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
+    // ── Token check — reject requests without valid X-WC-Token ──
+    const token = request.headers.get('X-WC-Token') || '';
+    if (env.WC_SECRET && token !== env.WC_SECRET) {
+      return jsonResponse({ error: 'Unauthorised' }, 401, cors);
+    }
+
     // ── Route: POST /api/messages → OpenRouter ──
     if (url.pathname === '/api/messages' && request.method === 'POST') {
       const body = await request.text();

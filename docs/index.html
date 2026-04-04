@@ -622,6 +622,7 @@
 //  Replace after deploying: npx wrangler deploy
 // ═══════════════════════════════════════════════════════════════
 var PROXY_URL = 'https://whatchan-api-proxy.dj4beat.workers.dev';
+var WC_TOKEN  = 'wc-9f2k4p8m';  // must match WC_SECRET worker secret
 
 // ═══════════════════════════════════════════════════════════════
 //  MODELS (OpenRouter)
@@ -1110,7 +1111,7 @@ function apiPost(payload, _retryCount) {
   addLog('[API] model=' + payload.model + ' tokens=' + payload.max_tokens);
   return fetch(PROXY_URL + '/api/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
     body: JSON.stringify(payload)
   }).then(function(res) {
     if (res.status === 429 && _retryCount < MAX_RETRIES) {
@@ -1193,8 +1194,9 @@ function loadFeeds() {
   document.getElementById('feed-loading').style.display = 'block';
   document.getElementById('feed-list').innerHTML = '';
 
-  fetch(PROXY_URL + '/api/rss?sport=' + ACTIVE_SPORT + '&source=all')
-    .then(function(r) { return r.json(); })
+  fetch(PROXY_URL + '/api/rss?sport=' + ACTIVE_SPORT + '&source=all', {
+    headers: { 'X-WC-Token': WC_TOKEN }
+  }).then(function(r) { return r.json(); })
     .then(function(data) {
       S.feedItems = data.items || [];
       renderFeed();
@@ -1302,7 +1304,7 @@ function fetchUrlArticle() {
 
   fetch(PROXY_URL + '/api/fetch-article', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
     body: JSON.stringify({ articleUrl: url })
   })
   .then(function(r) { return r.json(); })
@@ -1882,7 +1884,7 @@ function generateFromFeed(idx) {
 
   fetch(PROXY_URL + '/api/fetch-article', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
     body: JSON.stringify({ articleUrl: item.link })
   })
   .then(function(r) { return r.json(); })
