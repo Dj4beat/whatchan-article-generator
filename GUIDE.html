@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatChan Article Generator — User Guide</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  h1 { font-size: 2rem; color: #f0f6fc; margin-bottom: 6px; }
+  .subtitle { color: #8b949e; margin-bottom: 40px; font-size: 1rem; }
+  h2 { font-size: 1.2rem; color: #e6edf3; margin: 36px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #21262d; }
+  h3 { font-size: 1rem; color: #79c0ff; margin: 20px 0 8px; }
+  p { margin-bottom: 12px; color: #c9d1d9; }
+  li { margin-bottom: 6px; }
+  ul, ol { padding-left: 22px; margin-bottom: 14px; }
+
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; }
+  .card.warn { border-color: #d29922; background: #161208; }
+  .card.good { border-color: #238636; background: #0c1a0c; }
+  .card.info { border-color: #1f6feb; background: #0d1b2a; }
+
+  .label { display: inline-block; font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
+  .label.warn { background: #d29922; color: #000; }
+  .label.good { background: #238636; color: #fff; }
+  .label.info { background: #1f6feb; color: #fff; }
+  .label.red  { background: #da3633; color: #fff; }
+
+  code { background: #21262d; color: #79c0ff; padding: 2px 6px; border-radius: 4px; font-size: .88rem; font-family: 'Consolas', monospace; }
+  pre { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; overflow-x: auto; font-family: 'Consolas', monospace; font-size: .85rem; color: #e6edf3; margin-bottom: 16px; line-height: 1.5; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: .9rem; }
+  th { background: #161b22; color: #8b949e; text-align: left; padding: 8px 12px; border: 1px solid #21262d; font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid #21262d; vertical-align: top; }
+  tr:nth-child(even) td { background: #0d1117; }
+
+  .toc { background: #161b22; border: 1px solid #21262d; border-radius: 10px; padding: 20px 24px; margin-bottom: 36px; }
+  .toc a { color: #79c0ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc li { margin-bottom: 4px; }
+
+  .step { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+  .step-num { background: #1f6feb; color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .step-body { flex: 1; }
+
+  hr { border: none; border-top: 1px solid #21262d; margin: 32px 0; }
+  .dim { color: #8b949e; font-size: .9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>WhatChan Article Generator</h1>
+  <p class="subtitle">User guide for Adrian Dane &mdash; last updated April 2026</p>
+
+  <div class="toc">
+    <strong style="color:#e6edf3;">Contents</strong>
+    <ol style="margin-top:10px;">
+      <li><a href="#links">Important links and accounts</a></li>
+      <li><a href="#how-it-works">How it works (architecture)</a></li>
+      <li><a href="#using-it">Using the generator</a></li>
+      <li><a href="#models">Choosing a model</a></li>
+      <li><a href="#pipeline">The generation pipeline</a></li>
+      <li><a href="#openrouter">Managing OpenRouter credits</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#deploying">Making changes and deploying</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ol>
+  </div>
+
+  <!-- ═══════════════════════════════ LINKS ═══════════════════════════════ -->
+  <h2 id="links">1. Important links and accounts</h2>
+
+  <table>
+    <tr><th>Resource</th><th>URL / Detail</th></tr>
+    <tr><td><strong>Live tool</strong></td><td><a href="https://dj4beat.github.io/whatchan-article-generator/" style="color:#79c0ff;">https://dj4beat.github.io/whatchan-article-generator/</a></td></tr>
+    <tr><td><strong>GitHub repo</strong></td><td><a href="https://github.com/Dj4beat/whatchan-article-generator" style="color:#79c0ff;">github.com/Dj4beat/whatchan-article-generator</a></td></tr>
+    <tr><td><strong>Cloudflare Worker</strong></td><td>whatchan-api-proxy (in your Cloudflare dashboard)</td></tr>
+    <tr><td><strong>OpenRouter account</strong></td><td><a href="https://openrouter.ai" style="color:#79c0ff;">openrouter.ai</a> — top up credits here</td></tr>
+    <tr><td><strong>Worker URL</strong></td><td>https://whatchan-api-proxy.dj4beat.workers.dev</td></tr>
+  </table>
+
+  <div class="card warn">
+    <span class="label warn">IMPORTANT</span> <strong>Set a spend cap on OpenRouter.</strong>
+    Go to <a href="https://openrouter.ai/settings/limits" style="color:#79c0ff;">openrouter.ai/settings/limits</a>
+    and set a monthly cap (e.g. &pound;10). This protects you if anyone discovers the tool URL and tries to abuse it.
+  </div>
+
+  <!-- ═══════════════════════════════ ARCHITECTURE ═══════════════════════════════ -->
+  <h2 id="how-it-works">2. How it works (architecture)</h2>
+
+  <p>Your browser never talks to OpenRouter directly. Everything goes through a Cloudflare Worker that holds your API key securely.</p>
+
+  <pre>Your Browser (GitHub Pages)
+    │
+    ├── GET  /api/rss          → Cloudflare Worker → RSS feeds (BBC, Sky, etc.)
+    ├── POST /api/fetch-article → Cloudflare Worker → Article URL (extracts text)
+    └── POST /api/messages     → Cloudflare Worker → OpenRouter API → AI model</pre>
+
+  <p>This means:</p>
+  <ul>
+    <li>Your OpenRouter API key is <strong>never visible</strong> in the browser or page source</li>
+    <li>RSS feeds and article URLs are fetched server-side, bypassing CORS restrictions</li>
+    <li>The Cloudflare Worker validates a secret token (<code>wc-9f2k4p8m</code>) on every request</li>
+  </ul>
+
+  <h3>Where the files live</h3>
+  <table>
+    <tr><th>File</th><th>What it is</th></tr>
+    <tr><td><code>docs/index.html</code></td><td>The entire frontend — single HTML file, ~3000 lines</td></tr>
+    <tr><td><code>worker/src/index.js</code></td><td>Cloudflare Worker — proxies all API calls</td></tr>
+    <tr><td><code>worker/wrangler.toml</code></td><td>Worker config (name, compatibility)</td></tr>
+    <tr><td><code>CLAUDE.md</code></td><td>Context file for Claude AI sessions</td></tr>
+    <tr><td><code>GUIDE.html</code></td><td>This file</td></tr>
+  </table>
+
+  <!-- ═══════════════════════════════ USING IT ═══════════════════════════════ -->
+  <h2 id="using-it">3. Using the generator</h2>
+
+  <h3>Tab: News Feed (default)</h3>
+  <p>Loads live headlines from BBC Sport, Sky Sports, The Athletic and Guardian. Switch sports using the icon bar at the top.</p>
+  <ul>
+    <li>Click any headline to expand it</li>
+    <li>Optionally upload a supporting file (PDF, DOCX, TXT) — treated as trusted fact by the AI</li>
+    <li>Click <strong>Generate WhatChan Article</strong> — the 5-step pipeline runs automatically</li>
+  </ul>
+
+  <h3>Tab: Paste URL</h3>
+  <p>Enter any article URL, click <strong>Fetch</strong> — the worker extracts the article text. Choose a category, optionally add notes or an uploaded file, then generate.</p>
+
+  <h3>Tab: Evergreen</h3>
+  <p>Pre-built topic templates for each sport. Select a team and article type (Match Preview, Match Review, Fixtures, Season Preview, etc.) or choose from 15 evergreen topics. Supports batch generation.</p>
+
+  <h3>Tab: Generated</h3>
+  <p>All articles generated in this session. Click any to preview the full HTML output. Use <strong>Copy HTML</strong> to paste into WordPress (Gutenberg custom HTML block).</p>
+
+  <h3>File upload</h3>
+  <p>Available on: News Feed articles, Paste URL, Evergreen/custom tabs. Accepts <strong>PDF, DOCX, TXT</strong>. Content is labelled as <em>TRUSTED ADDITIONAL CONTEXT</em> — the AI treats it as fact, not something to verify or question. Good uses: Trippier's stats sheet, a second source article, club press releases.</p>
+
+  <h3>Article length</h3>
+  <p>Four options: <strong>Standard</strong> (~700 words), <strong>Medium</strong> (~1,100 words), <strong>Longform</strong> (~1,800 words), <strong>Custom</strong> (enter your own word count).</p>
+
+  <!-- ═══════════════════════════════ MODELS ═══════════════════════════════ -->
+  <h2 id="models">4. Choosing a model</h2>
+
+  <p>The model dropdown selects the AI used for <strong>writing and E-E-A-T polish</strong>. Analysis, QC, SEO and hallucination checks always use <strong>Gemini 2.5 Flash</strong> (fast and cheap regardless of your selection).</p>
+
+  <table>
+    <tr><th>Model</th><th>Best for</th><th>Approx. cost/article</th></tr>
+    <tr><td>Gemini 2.5 Flash ⚡ <span class="dim">(default)</span></td><td>Everyday use — fast, reliable, cheap</td><td>&lt; £0.01</td></tr>
+    <tr><td>Gemini 2.5 Pro</td><td>Higher quality, still reasonable cost</td><td>~£0.02</td></tr>
+    <tr><td>GPT-4.1 Mini</td><td>OpenAI quality on a budget</td><td>~£0.01</td></tr>
+    <tr><td>GPT-4.1 / GPT-4o</td><td>Strong structured writing</td><td>~£0.02-0.03</td></tr>
+    <tr><td>Claude Sonnet 4</td><td>Nuanced, authoritative tone</td><td>~£0.03</td></tr>
+    <tr><td>Claude Opus 4</td><td>Highest quality, slowest</td><td>~£0.10</td></tr>
+    <tr><td>Mistral Large</td><td>Clean structured European-style prose</td><td>~£0.02</td></tr>
+    <tr><td>Grok 3</td><td>Worth testing — good at tone</td><td>~£0.03</td></tr>
+    <tr><td>DeepSeek V3 / R1</td><td>Cheap alternative, test quality</td><td>&lt; £0.01</td></tr>
+    <tr><td>Llama 4 Scout/Maverick</td><td>Meta's latest — very cheap to test</td><td>&lt; £0.01</td></tr>
+  </table>
+
+  <div class="card info">
+    <span class="label info">TIP</span> The <strong>cost estimate</strong> shown in the UI is approximate — based on token counts for your chosen length. Real cost may vary slightly.
+  </div>
+
+  <!-- ═══════════════════════════════ PIPELINE ═══════════════════════════════ -->
+  <h2 id="pipeline">5. The generation pipeline</h2>
+
+  <p>Every article goes through these steps automatically. Watch the Activity Log for progress.</p>
+
+  <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Fetch</strong> — The worker retrieves the full article text from the source URL (or you've already provided source text/uploads).</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Analyse</strong> — Gemini 2.5 Flash reads the source and extracts key facts, names, quotes, stats, and the main angle. This is what the writer uses as its ground truth.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body"><strong>Write</strong> — Your selected model writes a completely original WhatChan article using the extracted facts. Never a copy — a new angle, new structure, expert analysis added.</div></div>
+  <div class="step"><div class="step-num">2b</div><div class="step-body"><strong>Hallucination scan</strong> — Gemini 2.5 Flash compares the draft against the source. Any invented names, fabricated quotes, invented stats, or placeholder text (<code>[insert date]</code> etc.) are automatically removed.</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body"><strong>QC + SEO</strong> — Fact-check pass (wrong names, wrong stats, outdated info) runs first, then SEO fields (5 title options, 2 meta descriptions, tags, keyphrases, URL slug) are generated.</div></div>
+  <div class="step"><div class="step-num">5</div><div class="step-body"><strong>E-E-A-T Polish</strong> — Your selected model reviews and strengthens Experience, Expertise, Authoritativeness, Trustworthiness signals. Enhances pullquotes, stat cards, and source attributions.</div></div>
+
+  <p>The final output includes: full article HTML, schema.org Article + Breadcrumb JSON-LD, SEO data block, two banners (sport banner mid-article, blog banner at the bottom), and a tag strip.</p>
+
+  <!-- ═══════════════════════════════ OPENROUTER ═══════════════════════════════ -->
+  <h2 id="openrouter">6. Managing OpenRouter credits</h2>
+
+  <div class="card warn">
+    <span class="label warn">ACTION REQUIRED</span> <strong>Keep credits topped up.</strong> If your balance hits zero, the generator will fail silently with API errors. Check your balance at <a href="https://openrouter.ai/credits" style="color:#f0c842;">openrouter.ai/credits</a>.
+  </div>
+
+  <h3>Cost guide</h3>
+  <ul>
+    <li>With Gemini 2.5 Flash as the writing model, each article costs roughly <strong>£0.01-0.02</strong> total (including all pipeline steps)</li>
+    <li>With Claude Opus 4, expect <strong>£0.10-0.15</strong> per article</li>
+    <li>&pound;10 in credits = roughly 500-1000 articles with the default model</li>
+  </ul>
+
+  <h3>Spend cap (do this now if not done)</h3>
+  <ol>
+    <li>Go to <a href="https://openrouter.ai/settings/limits" style="color:#79c0ff;">openrouter.ai/settings/limits</a></li>
+    <li>Set a monthly spending limit (e.g. &pound;10)</li>
+    <li>This protects you if anyone finds the tool URL and tries to abuse it</li>
+  </ol>
+
+  <h3>Adding credits</h3>
+  <ol>
+    <li>Go to <a href="https://openrouter.ai/credits" style="color:#79c0ff;">openrouter.ai/credits</a></li>
+    <li>Click <strong>Add credits</strong> and pay by card</li>
+    <li>Credits are available immediately — no need to redeploy anything</li>
+  </ol>
+
+  <!-- ═══════════════════════════════ SECURITY ═══════════════════════════════ -->
+  <h2 id="security">7. Security</h2>
+
+  <table>
+    <tr><th>Risk</th><th>Protection in place</th></tr>
+    <tr><td>API key leaked to browser</td><td>Key stored only as Cloudflare Worker secret — never in the HTML</td></tr>
+    <tr><td>Someone finds the URL and uses your credits</td><td>Worker secret token (<code>wc-9f2k4p8m</code>) — requests without it are rejected</td></tr>
+    <tr><td>Unlimited abuse if token is found</td><td>OpenRouter monthly spend cap (set this yourself)</td></tr>
+    <tr><td>Other websites embedding the tool</td><td>CORS <code>ALLOWED_ORIGINS</code> blocks cross-site requests</td></tr>
+  </table>
+
+  <div class="card info">
+    <span class="label info">NOTE</span> The secret token is visible in the HTML source (it has to be, so the browser can send it). Your GitHub repo is public (required for free GitHub Pages). The token is your first line of defence, the spend cap is your backstop.
+  </div>
+
+  <h3>If you suspect abuse</h3>
+  <ol>
+    <li>Check your OpenRouter usage at <a href="https://openrouter.ai/activity" style="color:#79c0ff;">openrouter.ai/activity</a></li>
+    <li>Change the token: update <code>WC_TOKEN</code> in <code>docs/index.html</code>, run <code>npx wrangler secret put WC_SECRET</code> with the new value, and push</li>
+  </ol>
+
+  <!-- ═══════════════════════════════ DEPLOYING ═══════════════════════════════ -->
+  <h2 id="deploying">8. Making changes and deploying</h2>
+
+  <h3>Changing the frontend (docs/index.html)</h3>
+  <p>Edit the file, then:</p>
+  <pre>git add docs/index.html
+git commit -m "Description of change"
+git push</pre>
+  <p>Wait ~2 minutes, then test in an <strong>incognito window</strong> (Ctrl+Shift+N) to avoid seeing a cached version.</p>
+
+  <h3>Changing the worker (worker/src/index.js)</h3>
+  <pre>cd worker
+npx wrangler deploy</pre>
+  <p>This deploys immediately — no waiting.</p>
+
+  <h3>Updating worker secrets</h3>
+  <pre>cd worker
+npx wrangler secret put OPENROUTER_API_KEY
+npx wrangler secret put WC_SECRET</pre>
+
+  <h3>Viewing worker logs (for debugging)</h3>
+  <pre>cd worker
+npx wrangler tail</pre>
+
+  <h3>Adding a new AI model to the dropdown</h3>
+  <p>Find the <code>var MODELS = [</code> array in <code>docs/index.html</code> (~line 630). Add a new entry:</p>
+  <pre>{ id: 'provider/model-name', label: 'Display Name', free: false, costIn: 0.001, costOut: 0.004 }</pre>
+  <p>Model IDs come from <a href="https://openrouter.ai/models" style="color:#79c0ff;">openrouter.ai/models</a> — use the ID shown under each model name.</p>
+
+  <!-- ═══════════════════════════════ TROUBLESHOOTING ═══════════════════════════════ -->
+  <h2 id="troubleshooting">9. Troubleshooting</h2>
+
+  <table>
+    <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+    <tr>
+      <td>Pipeline failed: Rate limited</td>
+      <td>Free model selected, or too many requests too fast</td>
+      <td>Select a paid model from the dropdown. Wait 60 seconds and retry.</td>
+    </tr>
+    <tr>
+      <td>Pipeline failed: No endpoints found for...</td>
+      <td>Model ID is wrong or that model was removed from OpenRouter</td>
+      <td>Check the model ID at openrouter.ai/models. Update the MODELS array.</td>
+    </tr>
+    <tr>
+      <td>Pipeline failed: Unauthorised</td>
+      <td>WC_SECRET worker secret not set or wrong value</td>
+      <td>Run <code>npx wrangler secret put WC_SECRET</code> and enter <code>wc-9f2k4p8m</code></td>
+    </tr>
+    <tr>
+      <td>Pipeline failed: Missing Authentication</td>
+      <td>OPENROUTER_API_KEY secret not set on worker</td>
+      <td>Run <code>npx wrangler secret put OPENROUTER_API_KEY</code> and paste your key</td>
+    </tr>
+    <tr>
+      <td>Old version of site showing after push</td>
+      <td>GitHub Pages cache</td>
+      <td>Open in incognito (Ctrl+Shift+N) or press Ctrl+Shift+R to hard-refresh</td>
+    </tr>
+    <tr>
+      <td>News feed not loading</td>
+      <td>RSS feeds temporarily down, or worker error</td>
+      <td>Click the refresh button. If all feeds fail, check the worker is deployed.</td>
+    </tr>
+    <tr>
+      <td>Article has [insert date] or invented names</td>
+      <td>Hallucination scan missed it, or model misbehaved</td>
+      <td>Select a higher-quality model. The hallucination scan catches most cases but is not 100%.</td>
+    </tr>
+    <tr>
+      <td>OpenRouter credits ran out mid-article</td>
+      <td>Balance hit zero</td>
+      <td>Top up at openrouter.ai/credits. Set a spend alert so this doesn't happen again.</td>
+    </tr>
+  </table>
+
+  <h3>Checking what went wrong</h3>
+  <p>The <strong>Activity Log</strong> (bottom left of the tool) shows every step. Look for lines marked in red — they contain the exact error message from OpenRouter. Key things to spot:</p>
+  <ul>
+    <li><code>[API] model=...</code> — confirms which model is actually being used</li>
+    <li><code>Hallucinations detected (N)</code> — shows the scan found and removed invented content</li>
+    <li><code>Rate limited (attempt X/5)</code> — retrying automatically, wait for it</li>
+  </ul>
+
+  <hr>
+  <p class="dim" style="text-align:center;">WhatChan Article Generator &mdash; Built by Adrian Dane &mdash; April 2026</p>
+
+</div>
+</body>
+</html>
