@@ -1089,23 +1089,25 @@ function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
 
 function apiPost(payload, _retryCount) {
   _retryCount = _retryCount || 0;
-  var MAX_RETRIES = 3;
+  var MAX_RETRIES = 5;
   if (!PROXY_URL || PROXY_URL.indexOf('your-subdomain') >= 0) {
     return Promise.reject(new Error('No proxy URL configured. Update the PROXY_URL variable at the top of this file with your Cloudflare Worker URL.'));
   }
+  addLog('[API] model=' + payload.model + ' tokens=' + payload.max_tokens);
   return fetch(PROXY_URL + '/api/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   }).then(function(res) {
     if (res.status === 429 && _retryCount < MAX_RETRIES) {
-      var backoff = Math.pow(2, _retryCount) * 2000 + Math.random() * 1000;
-      addLog('Rate limited, retrying in ' + Math.round(backoff/1000) + 's...');
+      var backoff = Math.pow(2, _retryCount) * 5000 + Math.random() * 2000;
+      addLog('Rate limited (attempt ' + (_retryCount+1) + '/' + MAX_RETRIES + '), retrying in ' + Math.round(backoff/1000) + 's...');
       return delay(backoff).then(function(){ return apiPost(payload, _retryCount + 1); });
     }
     if (!res.ok) {
-      return res.json().catch(function(){ return {}; }).then(function(e) {
-        var msg = (e.error && e.error.message) ? e.error.message : 'API error ' + res.status;
+      return res.text().then(function(txt) {
+        var e = {}; try { e = JSON.parse(txt); } catch(_){}
+        var msg = (e.error && e.error.message) ? e.error.message : 'API error ' + res.status + ': ' + txt.slice(0, 200);
         throw new Error(msg);
       });
     }
@@ -1858,25 +1860,30 @@ function runArticlePipeline(opts) {
   // Analysis uses free model — grunt work
   callFreeLLM('You are a ' + SPORTS[ACTIVE_SPORT].label.toLowerCase() + ' news analyst. Extract facts thoroughly.', analysePrompt, 1500)
     .then(function(analysis) {
-      // Step 2: Write article
+      // Step 2: Write article (delay to avoid rate limits)
       showPipeline(pipe, 'write');
       addLog('Step 2/4: Writing unique article...', 'ok');
       var newsContext = analysis;
       var writePrompt = buildPrompt(spec, newsContext, articleLength, opts.extraContext);
       writePrompt += '\nNOTE: "' + opts.title + '" is the SOURCE headline. Create your OWN unique H1 with a different angle.';
-      return callLLM(getSystemPrompt(), writePrompt, baseTokens).then(function(draft) {
+      return delay(2000).then(function() {
+        return callLLM(getSystemPrompt(), writePrompt, baseTokens);
+      }).then(function(draft) {
         return { draft: draft, newsContext: newsContext };
       });
     })
     .then(function(r) {
-      // Step 3: QC + SEO in parallel
+      // Step 3: QC then SEO (sequential to avoid rate limits)
       showPipeline(pipe, 'qc');
       addLog('Step 3/4: Quality check + SEO fields...', 'ok');
-      return Promise.all([
-        qualityCheck(spec, r.draft, r.newsContext),
-        genSeoFields(spec)
-      ]).then(function(results) {
-        return { draft: r.draft, newsContext: r.newsContext, qc: results[0], seo: results[1] };
+      return delay(2000).then(function() {
+        return qualityCheck(spec, r.draft, r.newsContext);
+      }).then(function(qc) {
+        return delay(2000).then(function() {
+          return genSeoFields(spec);
+        }).then(function(seo) {
+          return { draft: r.draft, newsContext: r.newsContext, qc: qc, seo: seo };
+        });
       });
     })
     .then(function(r) {
@@ -1898,10 +1905,12 @@ function runArticlePipeline(opts) {
       });
     })
     .then(function(r) {
-      // Step 4: E-E-A-T Polish
+      // Step 4: E-E-A-T Polish (delay to avoid rate limits)
       showPipeline(pipe, 'eeat');
       addLog('Step 4/4: E-E-A-T polish...', 'ok');
-      return eeatPolish(spec, r.body, r.newsContext).then(function(polished) {
+      return delay(2000).then(function() {
+        return eeatPolish(spec, r.body, r.newsContext);
+      }).then(function(polished) {
         return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
       }).catch(function() {
         // If EEAT fails, use unpolished version
