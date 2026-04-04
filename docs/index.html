@@ -1087,6 +1087,20 @@ function getTokenLimit() {
 // ═══════════════════════════════════════════════════════════════
 function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
 
+// Clean stray markdown from LLM output — safety net
+function cleanMarkdown(html) {
+  return html
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<![<\/\w])\*(.+?)\*(?![>])/g, '<em>$1</em>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\[insert[^\]]*\]/gi, '')
+    .replace(/\[TBC[^\]]*\]/gi, '')
+    .replace(/\[unknown[^\]]*\]/gi, '');
+}
+
 function apiPost(payload, _retryCount) {
   _retryCount = _retryCount || 0;
   var MAX_RETRIES = 5;
@@ -1390,10 +1404,17 @@ function getSystemPrompt() {
     + '- Vary sentence length: mix short punchy sentences with richer analytical ones\n'
     + '- Use specific stats, dates and names to add credibility\n'
     + '- Do NOT focus on TV channels — write about the ' + sportLabel + ' itself\n\n'
-    + 'FACTUAL ACCURACY:\n'
+    + 'FACTUAL ACCURACY — ZERO TOLERANCE FOR FABRICATION:\n'
     + '- ONLY state facts from the NEWS CONTEXT or TRUSTED CONTEXT provided\n'
     + '- NEVER invent stats, results, rankings or player situations\n'
+    + '- NEVER fabricate names of people (ministers, officials, journalists, analysts, chiefs) — if a name is not in the source, do not invent one\n'
+    + '- NEVER leave placeholder text like [insert date], [insert name], [TBC] — if you do not know, write around it\n'
+    + '- NEVER attribute quotes to people not named in the source material\n'
     + '- Write around gaps — do not fill them with guesses\n\n'
+    + 'AUTHOR & BYLINE:\n'
+    + '- This article is written by ' + AUTHOR.name + ', WhatChan ' + sport.label + ' writer\n'
+    + '- Do NOT invent analyst names, reporter names, or any other fictional bylines\n'
+    + '- The only author credit should be: ' + AUTHOR.name + '\n\n'
     + 'SEO & GEO OPTIMISATION:\n'
     + '- H1 must contain the primary keyword naturally\n'
     + '- Answer the question implied by the title in the first two paragraphs (position zero targeting)\n'
@@ -1410,7 +1431,8 @@ function getSystemPrompt() {
     + '- End article body with: <p class="wc-sources"><strong>Sources:</strong> brief attribution</p>\n'
     + '- Do NOT include banners, tags, schema, or CSS — those are added automatically by the generator\n'
     + '- Output ONLY the inner HTML content (everything that goes inside <div class="wc-post">)\n'
-    + '- No DOCTYPE, html, head, body, style, or script tags';
+    + '- No DOCTYPE, html, head, body, style, or script tags\n'
+    + '- ABSOLUTELY NO MARKDOWN — output pure HTML only. Use <strong> not **, use <em> not *, use <h2> not ##. If you output any markdown syntax the article is broken.';
 }
 
 function getEeatSystem() {
@@ -1430,6 +1452,7 @@ function getEeatSystem() {
   + '- Do NOT change the headline or editor\'s note\n'
   + '- Enhance the pullquotes, stat cards, and source attributions where possible\n'
   + '- British English throughout\n'
+  + '- ABSOLUTELY NO MARKDOWN — output pure HTML only. Use <strong> not **, use <em> not *, use <h2> not ##\n'
   + '- Output ONLY the enhanced HTML body content (inner content of .wc-post), nothing else';
 }
 
@@ -1869,7 +1892,7 @@ function runArticlePipeline(opts) {
       return delay(2000).then(function() {
         return callLLM(getSystemPrompt(), writePrompt, baseTokens);
       }).then(function(draft) {
-        return { draft: draft, newsContext: newsContext };
+        return { draft: cleanMarkdown(draft), newsContext: newsContext };
       });
     })
     .then(function(r) {
@@ -1911,10 +1934,10 @@ function runArticlePipeline(opts) {
       return delay(2000).then(function() {
         return eeatPolish(spec, r.body, r.newsContext);
       }).then(function(polished) {
-        return { body: polished.trim(), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
+        return { body: cleanMarkdown(polished.trim()), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
       }).catch(function() {
         // If EEAT fails, use unpolished version
-        return { body: r.body, qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
+        return { body: cleanMarkdown(r.body), qc: r.qc, seo: r.seo, wasRewritten: r.wasRewritten };
       });
     })
     .then(function(result) {
