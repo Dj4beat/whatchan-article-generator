@@ -1079,7 +1079,7 @@ function getEstSecs() {
 }
 function getTokenLimit() {
   if (S.articleLength === 'custom') return Math.max(3500, Math.round(S.customWordCount * 2.2));
-  return getTokenLimit();
+  return S.articleLength === 'longform' ? 8000 : (S.articleLength === 'medium' ? 5000 : 3500);
 }
 
 // ═══════════════════════════════════════════════════════════════
