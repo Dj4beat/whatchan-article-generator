@@ -1237,6 +1237,8 @@ function renderFeed() {
       + '</div>'
       + (item.description ? '<div class="feed-desc">' + escHtml(item.description) + '</div>' : '')
       + '<div class="feed-expand" id="feed-expand-' + realIdx + '" style="padding-top:10px;">'
+      +   '<div class="upload-area" id="feed-upload-' + realIdx + '" style="margin-bottom:10px;padding:8px 12px;" onclick="document.getElementById(\'feed-file-' + realIdx + '\').click()">+ Add context (PDF / DOCX / TXT) — treated as trusted facts</div>'
+      +   '<input type="file" id="feed-file-' + realIdx + '" accept=".pdf,.docx,.txt" style="display:none;" onchange="handleFileUpload(this,\'feed-' + realIdx + '\')">'
       +   '<button class="btn btn-primary" onclick="generateFromFeed(' + realIdx + ')">Generate WhatChan Article</button>'
       +   '<div id="feed-pipeline-' + realIdx + '" class="pipeline-bar" style="display:none;"></div>'
       + '</div>';
@@ -1762,6 +1764,62 @@ function qualityCheck(spec, articleHtml, newsContext) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  HALLUCINATION SCAN
+// ═══════════════════════════════════════════════════════════════
+function hallucinationScan(articleHtml, sourceText, trustedContext) {
+  var prompt = 'HALLUCINATION SCAN — compare the ARTICLE against the SOURCE. Flag anything invented.\n\n'
+    + '=== SOURCE (only verified facts) ===\n' + (sourceText || '').slice(0, 3000) + '\n\n'
+    + (trustedContext ? '=== TRUSTED CONTEXT (uploaded by editor — treat as fact) ===\n' + trustedContext.slice(0, 2000) + '\n\n' : '')
+    + '=== ARTICLE TO SCAN ===\n' + articleHtml.slice(0, 5000) + '\n\n'
+    + 'Flag ONLY items that appear in the article but NOT in the source or trusted context:\n'
+    + '- Invented person names (officials, analysts, coaches, reporters not in source)\n'
+    + '- Fabricated quotes (speech not in source)\n'
+    + '- Made-up statistics or scores not in source\n'
+    + '- Placeholder text: [insert ...], [TBC], [unknown], etc.\n\n'
+    + 'Do NOT flag: general football knowledge, well-known public figures already in the source, analysis/opinion clearly framed as such.\n\n'
+    + 'Return ONLY a JSON object (no markdown):\n'
+    + '{\n'
+    + '  "hallucinations_found": true | false,\n'
+    + '  "items": [\n'
+    + '    { "type": "invented_name"|"fake_quote"|"invented_stat"|"placeholder", "text": "exact text from article", "action": "remove"|"soften" }\n'
+    + '  ]\n'
+    + '}';
+
+  return callFreeLLM(
+    'You are a strict hallucination detector for a sports journalism AI. You ONLY flag content that cannot be traced to the provided source material.',
+    prompt, 1000
+  ).then(function(raw) {
+    try {
+      var clean = raw.replace(/^```[\w]*\n?/,'').replace(/```$/,'').trim();
+      var s = clean.indexOf('{'), e = clean.lastIndexOf('}');
+      if (s >= 0 && e > s) clean = clean.slice(s, e + 1);
+      return JSON.parse(clean);
+    } catch(_) {
+      return { hallucinations_found: false, items: [] };
+    }
+  }).catch(function() {
+    return { hallucinations_found: false, items: [] };
+  });
+}
+
+function stripHallucinations(articleHtml, scanResult) {
+  if (!scanResult.hallucinations_found || !scanResult.items || !scanResult.items.length) return articleHtml;
+  var html = articleHtml;
+  scanResult.items.forEach(function(item) {
+    if (!item.text || item.text.length < 4) return;
+    var escaped = item.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (item.action === 'remove') {
+      // Remove the sentence containing the fabricated text
+      html = html.replace(new RegExp('[^.!?]*' + escaped + '[^.!?]*[.!?]', 'gi'), '');
+    } else {
+      // Soften: wrap in a qualifier
+      html = html.replace(new RegExp(escaped, 'gi'), 'sources suggest');
+    }
+  });
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  E-E-A-T POLISH
 // ═══════════════════════════════════════════════════════════════
 function eeatPolish(spec, articleHtml, newsContext) {
@@ -1893,6 +1951,25 @@ function runArticlePipeline(opts) {
         return callLLM(getSystemPrompt(), writePrompt, baseTokens);
       }).then(function(draft) {
         return { draft: cleanMarkdown(draft), newsContext: newsContext };
+      });
+    })
+    .then(function(r) {
+      // Step 2b: Hallucination scan — run silently before QC
+      addLog('Scanning for hallucinations...');
+      return delay(1500).then(function() {
+        return hallucinationScan(r.draft, opts.sourceText, opts.extraContext);
+      }).then(function(scan) {
+        var draft = r.draft;
+        if (scan.hallucinations_found && scan.items && scan.items.length) {
+          addLog('Hallucinations detected (' + scan.items.length + ') — removing...', 'err');
+          draft = stripHallucinations(draft, scan);
+          draft = cleanMarkdown(draft);
+        } else {
+          addLog('Hallucination scan: clean', 'ok');
+        }
+        return { draft: draft, newsContext: r.newsContext };
+      }).catch(function() {
+        return { draft: r.draft, newsContext: r.newsContext };
       });
     })
     .then(function(r) {
