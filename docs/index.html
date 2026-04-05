@@ -1524,24 +1524,59 @@ function fetchInfographicData() {
   var status = document.getElementById('infographic-status');
   var url = (input ? input.value : '').trim();
   if (!url) { if (status) status.textContent = 'Paste a stats URL first.'; return; }
-  if (status) status.textContent = 'Fetching stats page...';
-  fetch(PROXY_URL + '/api/fetch-article', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
-    body: JSON.stringify({ articleUrl: url })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.error) throw new Error(data.error);
-    var text = data.text || '';
-    if (text.length < 30) throw new Error('No usable stats extracted');
-    S.infographicData = { url: url, text: text, title: data.title || url };
-    if (status) status.innerHTML = '<span style="color:#a78bfa;">&#10003; Stats loaded: ' + escHtml((data.title || url).slice(0, 60)) + ' (' + text.length + ' chars)</span>';
-    addLog('Infographic stats fetched: ' + text.length + ' chars', 'ok');
+  if (status) status.innerHTML = '<span style="color:#a78bfa;">Researching stats via Perplexity...</span>';
+  addLog('Fetching match stats from: ' + url);
+
+  // Use Perplexity Sonar Pro (live web access, can read JS-rendered pages like BBC Sport)
+  var prompt = 'Go to this exact URL and extract ALL match statistics shown on the page:\n'
+    + url + '\n\n'
+    + 'Extract and list EVERY stat you can find, in this exact format:\n\n'
+    + 'MATCH: [Home Team] [Score] [Away Team]\n'
+    + 'DATE: [Date]\n'
+    + 'COMPETITION: [Competition name]\n'
+    + 'VENUE: [Stadium]\n\n'
+    + 'MATCH STATS:\n'
+    + 'Possession: [home%] - [away%]\n'
+    + 'Total shots: [home] - [away]\n'
+    + 'Shots on target: [home] - [away]\n'
+    + 'Shots off target: [home] - [away]\n'
+    + 'Blocked shots: [home] - [away]\n'
+    + 'Corners: [home] - [away]\n'
+    + 'Fouls: [home] - [away]\n'
+    + 'Yellow cards: [home] - [away]\n'
+    + 'Red cards: [home] - [away]\n'
+    + 'Offsides: [home] - [away]\n'
+    + 'Expected goals (xG): [home] - [away]\n'
+    + 'Big chances: [home] - [away]\n'
+    + 'Passes: [home] - [away]\n'
+    + 'Pass accuracy: [home%] - [away%]\n'
+    + 'Tackles: [home] - [away]\n'
+    + 'Clearances: [home] - [away]\n'
+    + 'Saves: [home] - [away]\n\n'
+    + 'GOALS:\n'
+    + '[Scorer] [minute]\' ([assist if known])\n'
+    + '... list every goal\n\n'
+    + 'CARDS:\n'
+    + '[Player] [minute]\' [Yellow/Red]\n'
+    + '... list every card\n\n'
+    + 'If a stat is not shown on the page, omit that line entirely.\n'
+    + 'Include ONLY data visible on the page. Do not invent or estimate.';
+
+  callModel(
+    RESEARCH_MODEL,
+    'You are a sports data extractor with live web access. Visit the URL provided and extract every match statistic shown. Be precise — exact numbers only. If a stat is not on the page, do not include it.',
+    prompt, 2000
+  )
+  .then(function(text) {
+    if (!text || text.length < 50) throw new Error('Perplexity returned insufficient data');
+    S.infographicData = { url: url, text: text, title: 'Match Stats from ' + url.split('/').slice(-2).join('/') };
+    if (status) status.innerHTML = '<span style="color:#a78bfa;">&#10003; Stats extracted via Perplexity (' + text.length + ' chars)</span>';
+    addLog('Match stats extracted via Perplexity: ' + text.length + ' chars', 'ok');
   })
   .catch(function(e) {
     S.infographicData = null;
     if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + e.message + '</span>';
+    addLog('Stats fetch failed: ' + e.message, 'warn');
   });
 }
 
