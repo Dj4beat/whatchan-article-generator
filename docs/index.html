@@ -1287,21 +1287,51 @@ function researchMatchPreview(team) {
     addLog('[Research] Next fixture: ' + fixture.homeTeam + ' vs ' + fixture.awayTeam + ' (' + fixture.date + ')');
     addLog('[Research] ' + team + ' last result: ' + (teamData.results.length ? teamData.results[0].homeTeam + ' ' + teamData.results[0].score + ' ' + teamData.results[0].awayTeam : 'NOT FOUND'));
 
-    // Step 2: Get BBC data for the OPPONENT — fixtures + last result (in parallel with match reports)
+    // Step 2: Fetch opponent data + match reports + TV + club sites — ALL in parallel
+    // Build the date-specific live-footballontv.com URL
+    var fixtureIsoDate = (fixture.isoDate || '').replace(/-/g, '');
+    var tvUrl = fixtureIsoDate ? 'https://www.live-footballontv.com/#' + fixtureIsoDate.slice(0, 4) + fixtureIsoDate.slice(4, 6).replace(/^0/, '') + fixtureIsoDate.slice(6, 8) : '';
+    // Club official sites (common URL patterns)
+    var teamSlug = teamNameToSlug(team);
+    var opponentSlug = teamNameToSlug(opponent);
+
+    addLog('[Research] Step 2: Fetching opponent data, match reports, TV listings, club sites...');
     return Promise.all([
       fetchBbcTeamData(opponent),
-      teamData.lastMatchReport ? Promise.resolve(teamData.lastMatchReport) : (teamData.results.length && teamData.results[0].reportUrl ? fetchMatchReport(teamData.results[0].reportUrl) : Promise.resolve('')),
-      fetchReferenceSites(team, 'preview')
+      fetchReferenceSites(team, 'preview'),
+      tvUrl ? fetchMatchReport(tvUrl) : Promise.resolve('') // live-footballontv date page
     ]).then(function(parallel) {
       var opponentData = parallel[0];
-      var teamReport = parallel[1];
-      var refData = parallel[2];
+      var refData = parallel[1];
+      var tvData = parallel[2];
 
       addLog('[Research] ' + opponent + ' last result: ' + (opponentData.results.length ? opponentData.results[0].homeTeam + ' ' + opponentData.results[0].score + ' ' + opponentData.results[0].awayTeam : 'NOT FOUND'));
+      if (tvData) addLog('[Research] TV listings loaded', 'ok');
 
-      // Get opponent's last match report too
-      return (opponentData.lastMatchReport ? Promise.resolve(opponentData.lastMatchReport) : (opponentData.results.length && opponentData.results[0].reportUrl ? fetchMatchReport(opponentData.results[0].reportUrl) : Promise.resolve('')))
-        .then(function(opponentReport) {
+      // Step 3: Fetch match reports for BOTH teams (last match each — in parallel)
+      addLog('[Research] Step 3: Fetching match reports for both teams...');
+      var teamReportUrls = teamData.results.slice(0, 1).filter(function(r) { return r.reportUrl; }).map(function(r) { return r.reportUrl; });
+      var oppReportUrls = opponentData.results.slice(0, 1).filter(function(r) { return r.reportUrl; }).map(function(r) { return r.reportUrl; });
+      // Also use lastMatchReport if the worker already fetched it
+      var teamReportPromise = teamData.lastMatchReport ? Promise.resolve(teamData.lastMatchReport)
+        : (teamReportUrls.length ? fetchMatchReport(teamReportUrls[0]) : Promise.resolve(''));
+      var oppReportPromise = opponentData.lastMatchReport ? Promise.resolve(opponentData.lastMatchReport)
+        : (oppReportUrls.length ? fetchMatchReport(oppReportUrls[0]) : Promise.resolve(''));
+
+      return Promise.all([teamReportPromise, oppReportPromise]).then(function(reports) {
+        var teamReport = reports[0];
+        var opponentReport = reports[1];
+        if (teamReport) addLog('[Research] ' + team + ' match report loaded (' + teamReport.length + ' chars)', 'ok');
+        if (opponentReport) addLog('[Research] ' + opponent + ' match report loaded (' + opponentReport.length + ' chars)', 'ok');
+
+        return { opponentData: opponentData, refData: refData, tvData: tvData, teamReport: teamReport, opponentReport: opponentReport };
+      });
+    }).then(function(data) {
+      var opponentData = data.opponentData;
+      var teamReport = data.teamReport;
+      var opponentReport = data.opponentReport;
+      var refData = data.refData;
+      var tvData = data.tvData;
 
           // Step 3: Build the structured research context from REAL DATA
           var context = '=== VERIFIED MATCH RESEARCH (from BBC Sport — deterministic, not AI-generated) ===\n\n';
@@ -1355,10 +1385,25 @@ function researchMatchPreview(team) {
           });
           context += '\nWRITER NOTE: Use the upcoming fixtures to analyse the run-in for both teams. Are promotion-chasers playing each other? Are relegation-threatened teams facing easy opponents? This context makes the preview compelling.\n\n';
 
-          // Reference data (injuries, lineups, TV)
-          if (refData) {
-            context += '=== REFERENCE DATA ===\n' + refData + '\n\n';
+          // TV broadcast data (date-specific from live-footballontv.com)
+          if (tvData) {
+            context += '=== TV BROADCAST DATA (from live-footballontv.com) ===\n' + tvData.slice(0, 2000) + '\n\n';
           }
+          // For League Two: all matches on Sky Sports+, iFollow for overseas
+          context += 'TV NOTE: All League Two matches are available on Sky Sports+. Overseas supporters can watch via iFollow. Check live-footballontv.com for confirmed listings.\n\n';
+
+          // Reference data (injuries, lineups)
+          if (refData) {
+            context += '=== REFERENCE DATA (injuries, lineups) ===\n' + refData + '\n\n';
+          }
+
+          // Writer instructions based on editorial feedback
+          context += '=== WRITER INSTRUCTIONS (from editorial feedback — follow these precisely) ===\n';
+          context += '- NAME PLAYERS: When the match reports above mention a player by name with a specific action (goal, assist, error, save), reference that player BY NAME in your preview. "Tobias Brennan curled in a shot" → use "Brennan" in your tactical analysis.\n';
+          context += '- TV IS MANDATORY: WhatChan is a TV/streaming guide. State the EXACT broadcast channel. For League Two: Sky Sports+, with iFollow for overseas.\n';
+          context += '- DELETE EMPTY SECTIONS: If you have no real data for Team News (no injuries, no suspensions), do NOT include a hollow section. Replace it with a tactical angle or player spotlight instead.\n';
+          context += '- LEAGUE POSITION IN OPENING: State both teams\' exact league positions and what they are playing for within the first 2 paragraphs.\n';
+          context += '- PUNCHY SENTENCES: "For the fans who endured Friday at Blundell Park, this fixture is a mercy." — not 40-word run-on sentences.\n\n';
 
           // Step 4: One focused Perplexity call for data BBC doesn't provide
           addLog('[Research] Step 4: Enriching with H2H, managers, table positions via Perplexity...');
