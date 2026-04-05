@@ -260,12 +260,45 @@ git push</pre>
   <pre>cd worker
 npx wrangler deploy</pre>
 
-  <h3>Rolling back</h3>
-  <p>Every change is version-controlled in git. To see all versions:</p>
-  <pre>git log --oneline</pre>
-  <p>To revert to a specific version:</p>
-  <pre>git revert &lt;commit-hash&gt;</pre>
-  <p>Tagged releases (e.g. <code>v2.0</code>) provide named snapshots you can return to at any time.</p>
+  <h3>Rolling back to a previous version</h3>
+  <p>Every change is tagged in git with a version number. You can roll back to any version at any time.</p>
+
+  <div class="card info">
+    <p><span class="label info">CURRENT VERSIONS</span></p>
+    <ul style="margin-top:8px;">
+      <li><code>v2.1</code> &mdash; Feedback loop, auto-retry QC, KV learning, match pipeline, templates (5 Apr 2026)</li>
+      <li><code>v2.0</code> &mdash; White Label, DOCX export, persistence, SEO panel (5 Apr 2026)</li>
+      <li><code>v1.0</code> &mdash; Core generator with RSS, Perplexity, multi-model (Mar 2026)</li>
+    </ul>
+  </div>
+
+  <h3>Step 1: See all available versions</h3>
+  <pre>git tag -l</pre>
+
+  <h3>Step 2: See what changed between versions</h3>
+  <pre>git log v2.0..v2.1 --oneline</pre>
+
+  <h3>Step 3: Safe rollback (creates a new commit, preserves history)</h3>
+  <pre>git revert v2.0..HEAD --no-commit
+git commit -m "Revert to v2.0"
+git push</pre>
+  <p>This undoes everything after v2.0 but keeps the full git history. You can always roll forward again later.</p>
+
+  <h3>Step 4: Redeploy the worker (if the version change affects it)</h3>
+  <pre>cd worker
+npx wrangler deploy</pre>
+
+  <div class="card warn">
+    <p><span class="label warn">KNOCK-ON EFFECTS</span> Rolling back versions can break things if you don't also roll back the worker. Check <code>CHANGELOG.md</code> for the full list of what each version requires.</p>
+    <ul style="margin-top:8px;">
+      <li><strong>v2.1 &rarr; v2.0:</strong> Worker KV feedback routes still exist but are unused. Feedback falls back to localStorage. No harm.</li>
+      <li><strong>v2.1 &rarr; v1.0:</strong> Worker must also be rolled back (<code>git checkout v1.0 -- worker/</code> then <code>npx wrangler deploy</code>). White Label, DOCX, persistence, feedback all removed.</li>
+      <li><strong>Any rollback:</strong> Articles in localStorage still load if the version supports them. Feedback in KV is preserved regardless.</li>
+    </ul>
+  </div>
+
+  <h3>Full version details</h3>
+  <p>See <code>CHANGELOG.md</code> in the project root for detailed knock-on effects, verification steps, and worker rollback instructions for every version.</p>
 
   <!-- ── 17 ── -->
   <h2 id="troubleshooting">17. Troubleshooting</h2>
