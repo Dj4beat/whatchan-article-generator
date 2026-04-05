@@ -67,6 +67,7 @@
       <li><a href="#using-it">Using the generator</a></li>
       <li><a href="#custom-topic">Custom Topic &amp; club templates</a></li>
       <li><a href="#match-articles">Match Preview &amp; Match Report</a></li>
+      <li><a href="#infographics">Match Infographics</a></li>
       <li><a href="#models">Choosing a model</a></li>
       <li><a href="#pipeline">The generation pipeline</a></li>
       <li><a href="#quality">Quality controls &amp; auto-retry</a></li>
@@ -148,6 +149,39 @@
 
   <div class="card warn">
     <p><span class="label warn">QUALITY RULES</span> Every sentence must contain a specific fact. Generic filler like "both teams will be looking to" is banned. If a section has no real data, it is omitted entirely. Pullquotes must be real quotes from real people, never fabricated.</p>
+  </div>
+
+  <!-- ── 5b ── -->
+  <h2 id="infographics">5b. Match Infographics</h2>
+  <p>You can add a visual statistics infographic to any article. It shows comparison bars for each stat (possession, shots, xG, corners, etc.) with the home team in blue and the away team in red.</p>
+
+  <h3>How to add an infographic</h3>
+  <ol>
+    <li>Tick the <strong>Include Infographics</strong> checkbox (below the White Label bar)</li>
+    <li>Paste a <strong>BBC Sport match page URL</strong> into the stats URL field &mdash; for example: <code>https://www.bbc.com/sport/football/live/cx2rwjnpwe5t#MatchStats</code></li>
+    <li>Click <strong>Fetch Stats</strong></li>
+    <li>You should see a green confirmation showing the teams, score, and number of stats &mdash; for example: <em>&ldquo;&#10003; Atletico Madrid 1-2 Barcelona (10 stats)&rdquo;</em></li>
+    <li>Now generate your article as normal &mdash; the infographic will be inserted automatically at about 40% through the article</li>
+  </ol>
+
+  <div class="card info">
+    <p><span class="label info">ZERO COST</span> The stats are extracted directly from the BBC page&rsquo;s embedded data &mdash; no AI tokens are used. The data comes from BBC&rsquo;s own <code>__INITIAL_DATA__</code> JSON which is embedded in every match page. The generator reads this structured data and builds the visual bars in JavaScript &mdash; it&rsquo;s instant, free, and always shows the correct match.</p>
+  </div>
+
+  <h3>What stats are extracted</h3>
+  <p>The system extracts every available stat from the BBC page, typically including: Possession, Shots, Shots on Target, Expected Goals (xG), Corners, Fouls, Passes, Pass Accuracy, Tackles, Saves, and Offsides.</p>
+
+  <h3>What it looks like</h3>
+  <p>The infographic appears as a dark navy block in the article with:</p>
+  <ul>
+    <li>A gold &ldquo;MATCH STATISTICS&rdquo; header</li>
+    <li>Team names and score</li>
+    <li>Horizontal comparison bars for each stat &mdash; blue (home) vs red (away), with proportional widths calculated from the actual numbers</li>
+    <li>Stat labels centred below each bar</li>
+  </ul>
+
+  <div class="card warn">
+    <p><span class="label warn">BBC SPORT ONLY</span> Currently only BBC Sport match page URLs are supported. The URL must be a BBC Sport &ldquo;live&rdquo; page (e.g. <code>/sport/football/live/...</code>). Other stats sites (WhoScored, ESPN) are not yet supported for infographics.</p>
   </div>
 
   <!-- ── 6 ── -->
@@ -285,6 +319,7 @@ npx wrangler deploy              # Upload the updated code to Cloudflare</pre>
   <div class="card info">
     <p><span class="label info">CURRENT VERSIONS</span></p>
     <ul style="margin-top:8px;">
+      <li><code>v2.3</code> &mdash; Match infographics, BBC stats parser, feedback loop, auto-retry QC, KV learning (5 Apr 2026)</li>
       <li><code>v2.1</code> &mdash; Feedback loop, auto-retry QC, KV learning, match pipeline, templates (5 Apr 2026)</li>
       <li><code>v2.0</code> &mdash; White Label, DOCX export, persistence, SEO panel (5 Apr 2026)</li>
       <li><code>v1.0</code> &mdash; Core generator with RSS, Perplexity, multi-model (Mar 2026)</li>

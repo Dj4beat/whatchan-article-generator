@@ -224,6 +224,61 @@ Purple **Feedback** button on every article card. Opens a collapsible panel with
 
 ---
 
+## Match Infographics
+
+### How it works
+
+The infographic system extracts real match stats from BBC Sport pages and renders them as visual comparison bars in the article. **No LLM is used** — the stats are extracted deterministically from BBC's embedded `__INITIAL_DATA__` JSON.
+
+### Architecture
+
+```
+User pastes BBC Sport URL → clicks "Fetch Stats"
+  → Frontend calls POST /api/match-stats
+  → Worker fetches BBC page HTML
+  → parseBbcMatchStats() extracts __INITIAL_DATA__ JSON
+  → Unescapes the double-escaped string
+  → Finds "alignment":"home","stats":{ pattern (unique in the page)
+  → Extracts: possession, shots, shots on target, corners, fouls,
+    passes, pass accuracy, tackles, saves, offsides, xG
+  → Extracts team names from 300 chars before the stats marker
+  → Extracts score from accessible text: "Team A 1 , Team B 2 at Full time"
+  → Returns structured JSON: { homeTeam, awayTeam, score, competition, stats[] }
+  → Frontend renderInfographicHtml(data) builds visual HTML deterministically
+  → HTML stored in S.infographicData.html, ready for article insertion
+```
+
+### Key design decisions
+
+1. **No LLM for HTML generation** — asking models to output styled HTML with CSS classes was unreliable (produced header-only output). The JavaScript `renderInfographicHtml()` function builds guaranteed-correct HTML from the JSON data.
+2. **No Perplexity for stats** — Perplexity returned wrong matches (cached/guessed data). Direct BBC page parsing is deterministic and free.
+3. **Pattern: `"alignment":"home","stats":{`** — BBC pages contain team names dozens of times (header, commentary, lineups) but only ONE occurrence has this alignment+stats pattern. This is the reliable anchor.
+4. **Zero tokens, instant response** — just an HTTP fetch + regex parsing.
+
+### CSS classes (in article inline styles)
+
+| Class | Purpose |
+|-------|---------|
+| `.wc-infographic` | Outer container — dark gradient background |
+| `.wc-infographic-title` | "MATCH STATISTICS" header — gold, uppercase |
+| `.wc-match-score` | Team names + score + meta row |
+| `.wc-stat-row` | Flex container for each stat (bar or label) |
+| `.wc-sr-val` | Value display (left/right of bar) |
+| `.wc-sr-bar-wrap` | Bar container |
+| `.wc-sr-bar-home` | Blue bar (proportional width) |
+| `.wc-sr-bar-away` | Red bar (proportional width) |
+| `.wc-sr-label` | Stat name (centred below the bar) |
+
+### Insertion
+
+`insertAtPercent(body, html, 0.4)` places the infographic at 40% through the article, before the nearest `<h2>`. The sport banner goes at 65%. They are never adjacent.
+
+### Worker route
+
+`POST /api/match-stats` — accepts `{ statsUrl }`, returns `{ homeTeam, awayTeam, score, competition, stats[] }`. Only BBC Sport URLs are supported.
+
+---
+
 ## Match Preview / Report Quality Rules
 
 ### Banned Phrases (in match articles — automatic QC failure)

@@ -7,6 +7,50 @@ Each entry below documents **all knock-on effects** — not just what changed in
 
 ---
 
+## v2.3 — 5 April 2026
+
+**Tag:** `v2.3`
+**Summary:** Match infographics with BBC Sport stats parser, feedback loop, auto-retry QC, Cloudflare KV learning system, expert templates, invented byline fix.
+
+### What changed
+
+| Area | Change | Files affected |
+|------|--------|---------------|
+| **BBC Stats Parser** | `parseBbcMatchStats()` extracts match stats from BBC's embedded `__INITIAL_DATA__` JSON. Finds the `"alignment":"home","stats":{` pattern, parses all stats deterministically. Zero tokens, instant, correct match guaranteed. | `worker/src/index.js` |
+| **Worker route** | `POST /api/match-stats` — accepts `{ statsUrl }`, returns `{ homeTeam, awayTeam, score, competition, stats[] }`. BBC Sport URLs only. | `worker/src/index.js` |
+| **Infographic UI** | "Include Infographics" checkbox + stats URL field. Calls `/api/match-stats`, renders HTML via `renderInfographicHtml()`. | `docs/index.html` |
+| **Infographic CSS** | `.wc-infographic` class system — dark gradient, comparison bars (blue home / red away), responsive | `docs/index.html` |
+| **Infographic insertion** | `insertAtPercent()` places infographic at 40% of article, sport banner at 65% — never adjacent | `docs/index.html` |
+| **Auto-retry QC** | `retryUntilPass()` — up to 3 write+QC cycles with accumulated issues before surfacing to editor | `docs/index.html` |
+| **Feedback memory** | Cloudflare KV backed, permanent, cross-device. `loadFeedbackFromServer()` at init, `saveFeedbackEntry()` POSTs to KV | `docs/index.html`, `worker/src/index.js` |
+| **Model-aware learning** | `buildFeedbackLessons(currentModel)` — direct feedback vs shared knowledge framing | `docs/index.html` |
+| **Internal audit saves** | Hallucination scan + QC retry outcomes auto-saved to feedback memory | `docs/index.html` |
+| **Feedback UI** | Purple "Feedback" button + `reprocessWithFeedback()` on every article card | `docs/index.html` |
+| **Expert templates** | 14 football category templates auto-fill on category/club selection | `docs/index.html` |
+| **Invented byline fix** | `cleanMarkdown()` regex replaces any "By [Not Adrian Dane]" with correct byline | `docs/index.html` |
+| **Anti-filler rules** | Banned phrases, generic_filler hallucination category, section omission gates | `docs/index.html` |
+| **Reference site fetch** | `fetchReferenceSites()` scrapes premierinjuries.com, rotowire.com, live-footballontv.com in parallel | `docs/index.html` |
+| **Banner placement** | `insertAtPercent()` replaces `insertMidBanner()`. Blog banner moved after tags. | `docs/index.html` |
+
+### Knock-on effects
+
+1. **Worker MUST be redeployed** — new `/api/match-stats` route and KV feedback routes
+2. **KV namespace must exist** — if starting fresh: `npx wrangler kv namespace create FEEDBACK`
+3. **Feedback entries in old localStorage** — read as offline fallback, new entries go to KV
+4. **Infographics are BBC Sport only** — other stats sites not supported yet
+5. **Articles now store `model` and `matchContext`** — old articles won't have these fields
+
+### How to verify
+
+1. Tick "Include Infographics" → paste BBC Sport match URL → click "Fetch Stats" → should show green ✓ with teams, score, stat count
+2. Generate an article → infographic should appear at ~40% with stat bars
+3. Check Activity Log for "[Infographic Agent]" messages
+4. Generate a Match Preview → observe QC auto-retry in Activity Log
+5. Click Feedback on any article → type notes → Reprocess → article updates in place
+6. Generate another article → system prompt should contain feedback lessons
+
+---
+
 ## v2.2 — 5 April 2026
 
 **Tag:** `v2.2`
