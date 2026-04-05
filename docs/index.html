@@ -1519,180 +1519,115 @@ function toggleInfographic() {
   if (!cb || !cb.checked) S.infographicData = null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  INFOGRAPHIC AGENT — dedicated single-purpose stats extractor
+//  1. Perplexity visits the URL and returns structured JSON
+//  2. JavaScript builds the visual HTML from the JSON
+//  No fallbacks, no article-body guessing, no multi-step chains.
+// ═══════════════════════════════════════════════════════════════
 function fetchInfographicData() {
   var input = document.getElementById('infographic-url');
   var status = document.getElementById('infographic-status');
   var url = (input ? input.value : '').trim();
   if (!url) { if (status) status.textContent = 'Paste a stats URL first.'; return; }
-  if (status) status.innerHTML = '<span style="color:#a78bfa;">Researching stats via Perplexity...</span>';
-  addLog('Fetching match stats from: ' + url);
+  if (status) status.innerHTML = '<span style="color:#a78bfa;">&#9889; Infographic Agent working — Perplexity reading stats page...</span>';
+  addLog('[Infographic Agent] Sending Perplexity to: ' + url);
 
-  // Use Perplexity Sonar Pro (live web access, can read JS-rendered pages like BBC Sport)
-  var prompt = 'Go to this exact URL and extract ALL match statistics shown on the page:\n'
-    + url + '\n\n'
-    + 'Extract and list EVERY stat you can find, in this exact format:\n\n'
-    + 'MATCH: [Home Team] [Score] [Away Team]\n'
-    + 'DATE: [Date]\n'
-    + 'COMPETITION: [Competition name]\n'
-    + 'VENUE: [Stadium]\n\n'
-    + 'MATCH STATS:\n'
-    + 'Possession: [home%] - [away%]\n'
-    + 'Total shots: [home] - [away]\n'
-    + 'Shots on target: [home] - [away]\n'
-    + 'Shots off target: [home] - [away]\n'
-    + 'Blocked shots: [home] - [away]\n'
-    + 'Corners: [home] - [away]\n'
-    + 'Fouls: [home] - [away]\n'
-    + 'Yellow cards: [home] - [away]\n'
-    + 'Red cards: [home] - [away]\n'
-    + 'Offsides: [home] - [away]\n'
-    + 'Expected goals (xG): [home] - [away]\n'
-    + 'Big chances: [home] - [away]\n'
-    + 'Passes: [home] - [away]\n'
-    + 'Pass accuracy: [home%] - [away%]\n'
-    + 'Tackles: [home] - [away]\n'
-    + 'Clearances: [home] - [away]\n'
-    + 'Saves: [home] - [away]\n\n'
-    + 'GOALS:\n'
-    + '[Scorer] [minute]\' ([assist if known])\n'
-    + '... list every goal\n\n'
-    + 'CARDS:\n'
-    + '[Player] [minute]\' [Yellow/Red]\n'
-    + '... list every card\n\n'
-    + 'If a stat is not shown on the page, omit that line entirely.\n'
-    + 'Include ONLY data visible on the page. Do not invent or estimate.';
+  // ONE call to Perplexity — visit the page, extract stats, return JSON directly
+  var prompt = 'Visit this URL and extract the match statistics:\n' + url + '\n\n'
+    + 'Return a JSON object with this EXACT structure. Output ONLY the JSON — no text before or after it, no markdown backticks.\n\n'
+    + '{"homeTeam":"Home Team Name","awayTeam":"Away Team Name","score":"2-1","competition":"League Name","date":"5 April 2026","venue":"Stadium Name","stats":[{"label":"Possession","home":"62%","away":"38%"},{"label":"Shots","home":"15","away":"8"},{"label":"Shots on Target","home":"6","away":"3"},{"label":"xG","home":"1.89","away":"0.74"},{"label":"Corners","home":"7","away":"3"},{"label":"Fouls","home":"12","away":"9"},{"label":"Yellow Cards","home":"2","away":"3"},{"label":"Passes","home":"487","away":"312"},{"label":"Pass Accuracy","home":"86%","away":"73%"},{"label":"Tackles","home":"14","away":"21"},{"label":"Saves","home":"2","away":"5"},{"label":"Offsides","home":"1","away":"3"}]}\n\n'
+    + 'Rules: include every stat visible on the page. Never invent numbers. Values are strings like "15" or "62%".';
 
   callModel(
     RESEARCH_MODEL,
-    'You are a sports data extractor with live web access. Visit the URL provided and extract every match statistic shown. Be precise — exact numbers only. If a stat is not on the page, do not include it.',
+    'You are a match stats extractor. Visit the URL. Read every statistic on the page. Return ONLY a JSON object with homeTeam, awayTeam, score, competition, date, venue, and a stats array. No extra text.',
     prompt, 2000
   )
-  .then(function(text) {
-    if (!text || text.length < 50) throw new Error('Perplexity returned insufficient data');
-    S.infographicData = { url: url, text: text, title: 'Match Stats from ' + url.split('/').slice(-2).join('/') };
-    if (status) status.innerHTML = '<span style="color:#a78bfa;">&#10003; Stats extracted via Perplexity (' + text.length + ' chars)</span>';
-    addLog('Match stats extracted via Perplexity: ' + text.length + ' chars', 'ok');
-  })
-  .catch(function(e) {
-    S.infographicData = null;
-    if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + e.message + '</span>';
-    addLog('Stats fetch failed: ' + e.message, 'warn');
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════
-//  INFOGRAPHIC BUILDER — generates visual HTML from stats data
-// ═══════════════════════════════════════════════════════════════
-function buildInfographic(statsText, spec) {
-  // Step 1: Use LLM to extract structured JSON from the raw stats text
-  var prompt = 'Extract match statistics from the data below into a JSON object.\n\n'
-    + '=== STATS DATA ===\n' + (statsText || '').slice(0, 4000) + '\n=== END ===\n\n'
-    + 'Return ONLY a JSON object (no markdown, no backticks, no explanation):\n'
-    + '{\n'
-    + '  "homeTeam": "Team Name",\n'
-    + '  "awayTeam": "Team Name",\n'
-    + '  "score": "2-1",\n'
-    + '  "competition": "La Liga",\n'
-    + '  "date": "4 April 2026",\n'
-    + '  "venue": "Stadium Name",\n'
-    + '  "stats": [\n'
-    + '    { "label": "Possession", "home": "62%", "away": "38%" },\n'
-    + '    { "label": "Total Shots", "home": "18", "away": "7" },\n'
-    + '    { "label": "Shots on Target", "home": "6", "away": "3" },\n'
-    + '    { "label": "Expected Goals (xG)", "home": "1.89", "away": "0.74" },\n'
-    + '    { "label": "Corners", "home": "8", "away": "2" },\n'
-    + '    { "label": "Fouls", "home": "10", "away": "14" },\n'
-    + '    { "label": "Yellow Cards", "home": "1", "away": "3" },\n'
-    + '    { "label": "Passes", "home": "542", "away": "310" },\n'
-    + '    { "label": "Pass Accuracy", "home": "87%", "away": "74%" },\n'
-    + '    { "label": "Tackles", "home": "15", "away": "22" },\n'
-    + '    { "label": "Saves", "home": "2", "away": "4" },\n'
-    + '    { "label": "Offsides", "home": "3", "away": "1" }\n'
-    + '  ]\n'
-    + '}\n\n'
-    + 'RULES:\n'
-    + '- Include EVERY stat that appears in the data. The more stats the better.\n'
-    + '- Use ONLY values from the data. Never invent numbers.\n'
-    + '- If a stat is not in the data, do not include it in the stats array.\n'
-    + '- Values can be numbers ("18") or percentages ("62%"). Include the % sign for percentages.';
-
-  addLog('Building infographic from stats data...');
-  return callFreeLLM(
-    'You are a sports data extractor. Read the provided stats and return a structured JSON object. Include every available stat. Never invent data. Output ONLY valid JSON.',
-    prompt, 1500
-  ).then(function(raw) {
-    // Parse the JSON response
+  .then(function(raw) {
+    addLog('[Infographic Agent] Perplexity responded (' + raw.length + ' chars)');
+    // Parse JSON from the response
     var clean = raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
     var s = clean.indexOf('{');
     var e = clean.lastIndexOf('}');
-    if (s < 0 || e <= s) throw new Error('No valid JSON in response');
+    if (s < 0 || e <= s) throw new Error('No JSON found in Perplexity response');
     var data = JSON.parse(clean.slice(s, e + 1));
+    if (!data.stats || !data.stats.length) throw new Error('JSON has no stats array');
+    addLog('[Infographic Agent] Parsed: ' + data.homeTeam + ' ' + data.score + ' ' + data.awayTeam + ' (' + data.stats.length + ' stats)');
 
-    if (!data.stats || !data.stats.length) throw new Error('No stats extracted');
-
-    // Step 2: Build the HTML deterministically in JavaScript — no LLM needed
-    var html = '<div class="wc-infographic">\n';
-    html += '<div class="wc-infographic-title">MATCH STATISTICS</div>\n';
-
-    // Score header
-    html += '<div class="wc-match-score">';
-    html += '<div class="wc-ms-teams"><span>' + escHtml(data.homeTeam || 'Home') + '</span>';
-    html += '<span class="wc-ms-vs">' + escHtml(data.score || 'vs') + '</span>';
-    html += '<span>' + escHtml(data.awayTeam || 'Away') + '</span></div>';
-    var meta = [data.competition, data.date, data.venue].filter(Boolean).join(' &middot; ');
-    if (meta) html += '<div class="wc-ms-meta">' + meta + '</div>';
-    html += '</div>\n';
-
-    // Stat bars — built deterministically with exact percentage calculation
-    data.stats.forEach(function(stat) {
-      var hVal = (stat.home || '0').toString();
-      var aVal = (stat.away || '0').toString();
-      var hNum = parseFloat(hVal.replace('%', '')) || 0;
-      var aNum = parseFloat(aVal.replace('%', '')) || 0;
-      var total = hNum + aNum;
-      var hPct, aPct;
-      if (hVal.indexOf('%') >= 0 && aVal.indexOf('%') >= 0) {
-        // Already percentages — use directly
-        hPct = hNum;
-        aPct = aNum;
-        if (Math.abs(hPct + aPct - 100) > 5) { // normalise if they don't sum to 100
-          var norm = hPct + aPct;
-          hPct = norm > 0 ? Math.round(hPct / norm * 100) : 50;
-          aPct = 100 - hPct;
-        }
-      } else if (total > 0) {
-        hPct = Math.round(hNum / total * 100);
-        aPct = 100 - hPct;
-      } else {
-        hPct = 50; aPct = 50;
-      }
-
-      // Bar row
-      html += '<div class="wc-stat-row">';
-      html += '<div class="wc-sr-val">' + escHtml(hVal) + '</div>';
-      html += '<div class="wc-sr-bar-wrap">';
-      html += '<div class="wc-sr-bar-home" style="width:' + hPct + '%"></div>';
-      html += '<div class="wc-sr-bar-away" style="width:' + aPct + '%"></div>';
-      html += '</div>';
-      html += '<div class="wc-sr-val">' + escHtml(aVal) + '</div>';
-      html += '</div>\n';
-
-      // Label row
-      html += '<div class="wc-stat-row">';
-      html += '<div class="wc-sr-val"></div>';
-      html += '<div class="wc-sr-label">' + escHtml(stat.label || '') + '</div>';
-      html += '<div class="wc-sr-val"></div>';
-      html += '</div>\n';
-    });
-
-    html += '</div>';
-
-    addLog('Infographic built: ' + data.stats.length + ' stat comparison bars', 'ok');
-    return html;
-  }).catch(function(err) {
-    addLog('Infographic build failed: ' + err.message, 'warn');
-    return '';
+    // Build the HTML right here — no second LLM call needed
+    var html = renderInfographicHtml(data);
+    S.infographicData = { url: url, html: html, statCount: data.stats.length };
+    if (status) status.innerHTML = '<span style="color:#86efac;">&#10003; Infographic ready: ' + escHtml(data.homeTeam) + ' ' + escHtml(data.score) + ' ' + escHtml(data.awayTeam) + ' (' + data.stats.length + ' stats)</span>';
+    addLog('[Infographic Agent] Infographic HTML built and ready', 'ok');
+  })
+  .catch(function(err) {
+    S.infographicData = null;
+    addLog('[Infographic Agent] FAILED: ' + err.message, 'err');
+    if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + err.message + '</span>';
   });
+}
+
+// Pure JavaScript — renders the infographic HTML from structured JSON data
+// No LLM involved — deterministic, guaranteed output
+function renderInfographicHtml(data) {
+  var html = '<div class="wc-infographic">\n';
+  html += '<div class="wc-infographic-title">MATCH STATISTICS</div>\n';
+
+  // Score header
+  html += '<div class="wc-match-score">';
+  html += '<div class="wc-ms-teams"><span>' + escHtml(data.homeTeam || 'Home') + '</span>';
+  html += '<span class="wc-ms-vs">' + escHtml(data.score || 'vs') + '</span>';
+  html += '<span>' + escHtml(data.awayTeam || 'Away') + '</span></div>';
+  var meta = [data.competition, data.date, data.venue].filter(Boolean).join(' &middot; ');
+  if (meta) html += '<div class="wc-ms-meta">' + meta + '</div>';
+  html += '</div>\n';
+
+  // Stat comparison bars
+  (data.stats || []).forEach(function(stat) {
+    var hVal = (stat.home || '0').toString();
+    var aVal = (stat.away || '0').toString();
+    var hNum = parseFloat(hVal.replace(/%/g, '')) || 0;
+    var aNum = parseFloat(aVal.replace(/%/g, '')) || 0;
+    var total = hNum + aNum;
+    var hPct, aPct;
+    if (hVal.indexOf('%') >= 0 && aVal.indexOf('%') >= 0) {
+      hPct = hNum; aPct = aNum;
+      if (Math.abs(hPct + aPct - 100) > 5) {
+        var norm = hPct + aPct;
+        hPct = norm > 0 ? Math.round(hPct / norm * 100) : 50;
+        aPct = 100 - hPct;
+      }
+    } else if (total > 0) {
+      hPct = Math.round(hNum / total * 100);
+      aPct = 100 - hPct;
+    } else {
+      hPct = 50; aPct = 50;
+    }
+
+    html += '<div class="wc-stat-row">'
+      + '<div class="wc-sr-val">' + escHtml(hVal) + '</div>'
+      + '<div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:' + hPct + '%"></div><div class="wc-sr-bar-away" style="width:' + aPct + '%"></div></div>'
+      + '<div class="wc-sr-val">' + escHtml(aVal) + '</div>'
+      + '</div>\n';
+    html += '<div class="wc-stat-row">'
+      + '<div class="wc-sr-val"></div><div class="wc-sr-label">' + escHtml(stat.label || '') + '</div><div class="wc-sr-val"></div>'
+      + '</div>\n';
+  });
+
+  html += '</div>';
+  return html;
+}
+
+// buildInfographic is now just a passthrough — the HTML is already built by the agent
+function buildInfographic(statsText, spec) {
+  // If the infographic agent already built the HTML, use it directly
+  if (S.infographicData && S.infographicData.html) {
+    addLog('Infographic: using pre-built HTML (' + (S.infographicData.statCount || 0) + ' stats)', 'ok');
+    return Promise.resolve(S.infographicData.html);
+  }
+  // No pre-built HTML available — skip
+  return Promise.resolve('');
 }
 
 // Insert content at a given percentage of the article body (before nearest <h2>)
@@ -2931,14 +2866,7 @@ function runArticlePipeline(opts) {
     })
     .then(function(result) {
       // Build infographic: (1) fetched stats URL, (2) research context, (3) article body
-      var infChecked = document.getElementById('infographic-check');
-      var infSource = '';
-      if (infChecked && infChecked.checked) {
-        if (S.infographicData && S.infographicData.text) infSource = S.infographicData.text;
-        else if (result.newsContext) infSource = result.newsContext;
-        else if (result.body) infSource = result.body;
-      }
-      var infographicPromise = infSource ? buildInfographic(infSource, spec) : Promise.resolve('');
+      var infographicPromise = buildInfographic('', spec);
       return infographicPromise.then(function(infHtml) {
         spec._infographicHtml = infHtml;
         showPipeline(pipe, 'done');
@@ -3124,14 +3052,7 @@ function runEgGenerate() {
           .catch(function() { return r; });
       })
       .then(function(result) {
-        var infChecked = document.getElementById('infographic-check');
-        var infSrc = '';
-        if (infChecked && infChecked.checked) {
-          if (S.infographicData && S.infographicData.text) infSrc = S.infographicData.text;
-          else if (result.matchContext) infSrc = result.matchContext;
-          else if (result.body) infSrc = result.body;
-        }
-        var infP = infSrc ? buildInfographic(infSrc, spec) : Promise.resolve('');
+        var infP = buildInfographic('', spec);
         return infP.then(function(infHtml) {
           spec._infographicHtml = infHtml;
           spec.title = result.seo.h1 || spec.title;
@@ -3786,14 +3707,7 @@ function generateFromCustom() {
   // Shared finish + cleanup helpers used by both pipelines
   function finish(result, hadHallucinations) {
     // Infographic sources: (1) fetched stats URL, (2) match research context, (3) article body itself
-    var infChecked = document.getElementById('infographic-check');
-    var infSource = '';
-    if (infChecked && infChecked.checked) {
-      if (S.infographicData && S.infographicData.text) infSource = S.infographicData.text;
-      else if (result.matchContext) infSource = result.matchContext;
-      else if (result.body) infSource = result.body; // fallback: extract stats from the article itself
-    }
-    var infP = infSource ? buildInfographic(infSource, spec) : Promise.resolve('');
+    var infP = buildInfographic('', spec);
     infP.then(function(infHtml) {
       spec._infographicHtml = infHtml;
       showPipeline(pipelineEl, 'done');
