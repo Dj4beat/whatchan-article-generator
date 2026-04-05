@@ -1217,10 +1217,11 @@ function preResearchMatch(team, typeId) {
   var prompt;
   if (typeId === 'preview') {
     prompt = 'TASK: Find EXACT, SPECIFIC data for a ' + team + ' match preview article.\n\n'
+      + 'TODAY IS ' + TODAY_STR + '. The NEXT fixture means the first match AFTER today (' + TODAY_STR + '). Do NOT return any match that has already been played. Any fixture with a date before ' + TODAY_STR + ' is in the PAST and must be ignored.\n\n'
       + 'CRITICAL: Every answer must contain SPECIFIC names, numbers, dates. If you cannot confirm a data point, write "NOT FOUND" for that item. NEVER write generic statements like "both teams will be looking to" or "the match is expected to be competitive".\n\n'
-      + '1. NEXT FIXTURE\n'
+      + '1. NEXT FIXTURE (must be AFTER ' + TODAY_STR + ')\n'
       + '   - Exact opponent name\n'
-      + '   - Exact date (e.g. Saturday 12 April 2026)\n'
+      + '   - Exact date (e.g. Saturday 12 April 2026) — MUST be after ' + TODAY_STR + '\n'
       + '   - Kick-off time in GMT or BST\n'
       + '   - Venue: stadium name + home or away for ' + team + '\n'
       + '   - Competition: Premier League / FA Cup / Champions League etc.\n\n'
@@ -1295,7 +1296,7 @@ function preResearchMatch(team, typeId) {
   addLog('Researching ' + (typeId === 'preview' ? 'next fixture' : 'last match') + ' for ' + team + '...');
   return callModel(
     RESEARCH_MODEL,
-    'You are a sports data researcher with live web access. You must return SPECIFIC facts only — exact names, exact numbers, exact dates, exact scores. Never return vague or generic statements. If a data point cannot be confirmed, respond with "NOT FOUND" for that item. Check these sites specifically: premierinjuries.com for injuries, whoscored.com for stats and ratings, live-footballontv.com for UK TV listings, BBC Sport and Sky Sports for match reports and manager quotes.',
+    'You are a sports data researcher with live web access. Today is ' + TODAY_STR + '. For match PREVIEWS, the "next fixture" means the FIRST match AFTER today — never a past match. Any date before today is historical and must NOT be returned as a next fixture. You must return SPECIFIC facts only — exact names, exact numbers, exact dates, exact scores. Never return vague or generic statements. If a data point cannot be confirmed, respond with "NOT FOUND". Check: premierinjuries.com for injuries, whoscored.com for stats, live-footballontv.com for UK TV listings, BBC Sport and Sky Sports for match reports.',
     prompt, 2000
   ).catch(function(e) {
     addLog('Match research unavailable: ' + e.message, 'warn');
@@ -2114,7 +2115,8 @@ function getQcSystem() {
     + '4. PLACEHOLDER TEXT — Any [insert ...], [TBC], or unfilled bracket remaining in the article.\n'
     + '5. FAQ ANSWERS FROM TRAINING — Any FAQ answer that goes beyond what the source context states. Flag these as critical.\n'
     + '6. QUALITY — Cliches, filler, repeated phrases, non-British English.\n'
-    + '7. GENERIC FILLER — Sentences with no specific fact (no player name, no number, no date, no score) that could apply to any match. These are CRITICAL failures for match articles.\n\n'
+    + '7. GENERIC FILLER — Sentences with no specific fact (no player name, no number, no date, no score) that could apply to any match. These are CRITICAL failures for match articles.\n'
+    + '8. WRONG DATE FOR ARTICLE TYPE — If the article is a MATCH PREVIEW (future-looking) but contains dates that are BEFORE today (' + TODAY_STR + '), the fixture is in the PAST and this is a CRITICAL failure. Match previews must be about upcoming matches only. A preview of a game that already happened is worthless.\n\n'
     + 'DO NOT flag general tactical analysis, historical comparisons, or opinion/perspective — these are allowed.\n'
     + 'DO flag any specific current fact (who manages X, where Y plays, what score Z was) that is not in the source.\n\n'
     + 'Respond with ONLY a JSON object (no markdown, no backticks):\n'
@@ -2480,7 +2482,8 @@ function hallucinationScan(articleHtml, sourceText, trustedContext) {
     + '- Placeholder text: [insert ...], [TBC], [unknown] — critical\n'
     + '- GENERIC FILLER: Sentences that contain NO specific fact (no name, no number, no date, no score) and could apply to literally any match — critical. Examples: "both teams will be looking to put on a strong performance", "the midfield is expected to be a key area of contention", "the outcome often hinges on tactical discipline". These must be flagged for removal.\n'
     + '- FABRICATED QUOTES: Any pullquote or inline quote attributed to someone where the exact words are NOT in the source — critical\n'
-    + '- INVENTED BYLINE: Any author name, analyst name, or byline that is NOT "Adrian Dane" (unless White Label mode specifies a different author). Names like "Jack Davies", "Sarah Mitchell", "Tom Wilson" etc. are INVENTED and must be flagged as critical — the ONLY permitted author is Adrian Dane.\n\n'
+    + '- INVENTED BYLINE: Any author name, analyst name, or byline that is NOT "Adrian Dane" (unless White Label mode specifies a different author). Names like "Jack Davies", "Sarah Mitchell", "Tom Wilson" etc. are INVENTED and must be flagged as critical — the ONLY permitted author is Adrian Dane.\n'
+    + '- STALE FIXTURE: If the article claims to be a "match preview" or "upcoming fixture" but the match date is BEFORE today (' + TODAY_STR + '), the research returned old data. This is a CRITICAL failure — a preview of a past game is worthless.\n\n'
     + 'Do NOT flag: specific tactical analysis naming real players, historical facts framed as historical, opinion clearly framed as opinion, predictions based on stated evidence.\n\n'
     + 'Return ONLY a JSON object (no markdown):\n'
     + '{\n'
@@ -3652,8 +3655,6 @@ function updateSourceCats() {
 function generateFromCustom() {
   var title = document.getElementById('custom-title').value.trim();
   var desc = document.getElementById('custom-desc').value.trim();
-  if (!title) { alert('Please enter an article title.'); return; }
-
   var category = document.getElementById('custom-cat').value;
   var sportId = document.getElementById('custom-sport').value;
   var clubEl = document.getElementById('custom-club');
@@ -3664,6 +3665,13 @@ function generateFromCustom() {
     if (category === 'Match Previews') matchTypeId = 'preview';
     else if (category === 'Match Reports') matchTypeId = 'review';
   }
+  // Auto-generate title for match articles when club is selected but title is blank
+  if (!title && matchTypeId && club) {
+    if (matchTypeId === 'preview') title = club + ' Next Match ' + MONTH + ' ' + YEAR + ': Preview, Team News and How to Watch';
+    else if (matchTypeId === 'review') title = club + ' Match Report ' + MONTH + ' ' + YEAR + ': Result, Player Ratings and Key Talking Points';
+    document.getElementById('custom-title').value = title;
+  }
+  if (!title) { alert('Please enter an article title.'); return; }
   var extra = S.uploadedContext['custom'] ? S.uploadedContext['custom'].text : '';
   if (S.uploadedContext['custom-url']) extra = (extra ? extra + '\n\n---\n\n' : '') + 'URL CONTEXT:\n' + S.uploadedContext['custom-url'].text;
   if (desc) extra = (extra ? extra + '\n\n' : '') + 'ARTICLE BRIEF: ' + desc;
