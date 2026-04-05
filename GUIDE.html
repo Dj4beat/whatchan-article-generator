@@ -22,6 +22,7 @@
   .card.good { border-color: #238636; background: #0c1a0c; }
   .card.info { border-color: #1f6feb; background: #0d1b2a; }
   .card.blue { border-color: #1e3a5f; background: #0c1a2e; }
+  .card.purple { border-color: #7c3aed; background: #1a0a2e; }
 
   .label { display: inline-block; font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
   .label.warn { background: #d29922; color: #000; }
@@ -29,6 +30,7 @@
   .label.info { background: #1f6feb; color: #fff; }
   .label.red  { background: #da3633; color: #fff; }
   .label.blue { background: #1e3a5f; color: #7dd3fc; }
+  .label.purple { background: #7c3aed; color: #fff; }
 
   code { background: #21262d; color: #79c0ff; padding: 2px 6px; border-radius: 4px; font-size: .88rem; font-family: 'Consolas', monospace; }
   pre { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 16px; overflow-x: auto; font-family: 'Consolas', monospace; font-size: .85rem; color: #e6edf3; margin-bottom: 16px; line-height: 1.5; }
@@ -55,414 +57,234 @@
 <div class="wrap">
 
   <h1>WhatChan Article Generator</h1>
-  <p class="subtitle">User guide for Adrian Dane &mdash; last updated April 2026</p>
+  <p class="subtitle">User guide for Adrian Dane &mdash; last updated 5 April 2026</p>
 
   <div class="toc">
     <strong style="color:#e6edf3;">Contents</strong>
     <ol style="margin-top:10px;">
       <li><a href="#links">Important links and accounts</a></li>
-      <li><a href="#how-it-works">How it works (architecture)</a></li>
+      <li><a href="#how-it-works">How it works</a></li>
       <li><a href="#using-it">Using the generator</a></li>
+      <li><a href="#custom-topic">Custom Topic &amp; club templates</a></li>
+      <li><a href="#match-articles">Match Preview &amp; Match Report</a></li>
       <li><a href="#models">Choosing a model</a></li>
       <li><a href="#pipeline">The generation pipeline</a></li>
+      <li><a href="#quality">Quality controls &amp; auto-retry</a></li>
+      <li><a href="#feedback">Feedback &amp; learning system</a></li>
       <li><a href="#seo">SEO panel</a></li>
       <li><a href="#saved">Saved articles</a></li>
       <li><a href="#whitelabel">White Label mode</a></li>
       <li><a href="#docx">DOCX export</a></li>
-      <li><a href="#openrouter">Managing OpenRouter credits</a></li>
+      <li><a href="#openrouter">OpenRouter &amp; costs</a></li>
       <li><a href="#security">Security</a></li>
-      <li><a href="#deploying">Making changes and deploying</a></li>
+      <li><a href="#deploying">Deploying changes</a></li>
       <li><a href="#troubleshooting">Troubleshooting</a></li>
     </ol>
   </div>
 
-  <!-- ═══════════════════════════════ LINKS ═══════════════════════════════ -->
-  <h2 id="links">1. Important links and accounts</h2>
-
+  <!-- ── 1 ── -->
+  <h2 id="links">1. Important Links and Accounts</h2>
   <table>
-    <tr><th>Resource</th><th>URL / Detail</th></tr>
-    <tr><td><strong>Live tool</strong></td><td><a href="https://dj4beat.github.io/whatchan-article-generator/" style="color:#79c0ff;">https://dj4beat.github.io/whatchan-article-generator/</a></td></tr>
-    <tr><td><strong>GitHub repo</strong></td><td><a href="https://github.com/Dj4beat/whatchan-article-generator" style="color:#79c0ff;">github.com/Dj4beat/whatchan-article-generator</a></td></tr>
-    <tr><td><strong>Cloudflare Worker</strong></td><td>whatchan-api-proxy (in your Cloudflare dashboard)</td></tr>
-    <tr><td><strong>OpenRouter account</strong></td><td><a href="https://openrouter.ai" style="color:#79c0ff;">openrouter.ai</a> — top up credits here</td></tr>
-    <tr><td><strong>Worker URL</strong></td><td>https://whatchan-api-proxy.dj4beat.workers.dev</td></tr>
+    <tr><th>What</th><th>URL</th></tr>
+    <tr><td>Live site (GitHub Pages)</td><td><code>https://dj4beat.github.io/whatchan-article-generator/</code></td></tr>
+    <tr><td>GitHub repo</td><td><code>https://github.com/Dj4beat/whatchan-article-generator</code></td></tr>
+    <tr><td>Cloudflare Worker</td><td><code>https://whatchan-api-proxy.dj4beat.workers.dev</code></td></tr>
+    <tr><td>OpenRouter (AI models)</td><td><code>https://openrouter.ai</code></td></tr>
+    <tr><td>Cloudflare Dashboard</td><td><code>https://dash.cloudflare.com</code></td></tr>
   </table>
 
-  <div class="card warn">
-    <span class="label warn">IMPORTANT</span> <strong>Set a spend cap on OpenRouter.</strong>
-    Go to <a href="https://openrouter.ai/settings/limits" style="color:#79c0ff;">openrouter.ai/settings/limits</a>
-    and set a monthly cap (e.g. &pound;10). This protects you if anyone discovers the tool URL and tries to abuse it.
-  </div>
-
-  <!-- ═══════════════════════════════ ARCHITECTURE ═══════════════════════════════ -->
-  <h2 id="how-it-works">2. How it works (architecture)</h2>
-
-  <p>Your browser never talks to OpenRouter directly. Everything goes through a Cloudflare Worker that holds your API key securely.</p>
-
-  <pre>Your Browser (GitHub Pages)
-    │
-    ├── GET  /api/rss           → Cloudflare Worker → RSS feeds (BBC, Sky, etc.)
-    ├── POST /api/fetch-article → Cloudflare Worker → Article URL (extracts text)
-    └── POST /api/messages      → Cloudflare Worker → OpenRouter API → AI model</pre>
-
-  <p>This means:</p>
-  <ul>
-    <li>Your OpenRouter API key is <strong>never visible</strong> in the browser or page source</li>
-    <li>RSS feeds and article URLs are fetched server-side, bypassing CORS restrictions</li>
-    <li>The Cloudflare Worker validates a secret token (<code>wc-9f2k4p8m</code>) on every request</li>
-  </ul>
-
-  <h3>Where the files live</h3>
-  <table>
-    <tr><th>File</th><th>What it is</th></tr>
-    <tr><td><code>docs/index.html</code></td><td>The entire frontend — single HTML file, ~4000+ lines</td></tr>
-    <tr><td><code>worker/src/index.js</code></td><td>Cloudflare Worker — proxies all API calls</td></tr>
-    <tr><td><code>worker/wrangler.toml</code></td><td>Worker config (name, compatibility)</td></tr>
-    <tr><td><code>CLAUDE.md</code></td><td>Context file for Claude AI sessions</td></tr>
-    <tr><td><code>GUIDE.html</code></td><td>This file</td></tr>
-  </table>
-
-  <!-- ═══════════════════════════════ USING IT ═══════════════════════════════ -->
-  <h2 id="using-it">3. Using the generator</h2>
-
-  <h3>Tab: News Feed (default)</h3>
-  <p>Loads live headlines from BBC Sport, Sky Sports, The Athletic and Guardian. Switch sports using the icon bar at the top.</p>
-  <ul>
-    <li>Click any headline to expand it</li>
-    <li>Optionally upload a supporting file (PDF, DOCX, TXT) — treated as trusted fact by the AI</li>
-    <li>Optionally paste a URL in the <strong>Extra Context</strong> field (e.g. a Wikipedia page, Sky Sports article, club stats page) — click <strong>Add</strong> and the worker fetches it server-side. Can be combined with a file upload.</li>
-    <li>Click <strong>Generate WhatChan Article</strong> — the 6-step pipeline runs automatically</li>
-  </ul>
-
-  <h3>Tab: Paste URL</h3>
-  <p>Enter any article URL, click <strong>Fetch</strong> — the worker extracts the article text. Choose a category, optionally add notes or an uploaded file, then generate.</p>
-
-  <h3>Tab: Evergreen</h3>
-  <p>Pre-built topic templates for each sport. Select a team and article type (Match Preview, Match Review, Fixtures, Season Preview, etc.) or choose from 15 evergreen topics. Supports batch generation.</p>
-
-  <h3>Tab: Generated</h3>
-  <p>All articles generated in this session — and any from the past 7 days that haven't been deleted. Articles now persist across page refreshes and browser restarts. Each card shows when it was saved. Use <strong>Copy HTML</strong> to paste into WordPress, <strong>DOCX</strong> to download a Word file, or <strong>Delete</strong> once you've used it.</p>
-
-  <h3>File upload</h3>
-  <p>Available on: News Feed articles, Paste URL, Evergreen/custom tabs. Accepts <strong>PDF, DOCX, TXT</strong>. Content is labelled as <em>TRUSTED ADDITIONAL CONTEXT</em> — the AI treats it as fact, not something to verify or question. Good uses: a player's stats sheet, a second source article, club press releases.</p>
-
-  <div class="card warn">
-    <span class="label warn">PDF NOTE</span> Only <strong>text-based PDFs</strong> work. If you print-to-PDF or "Save as PDF" from a browser, the text is extractable and works fine. <strong>Scanned PDFs</strong> (photographed documents) contain images of text — the tool will show a red error and 0 chars extracted. In that case, use the <strong>URL context field</strong> instead, or save the content as a <code>.txt</code> or <code>.docx</code> file.
-  </div>
-
-  <h3>Article length</h3>
-  <p>Four options: <strong>Standard</strong> (~700 words), <strong>Medium</strong> (~1,100 words), <strong>Longform</strong> (~1,800 words), <strong>Custom</strong> (enter your own word count).</p>
-
-  <!-- ═══════════════════════════════ MODELS ═══════════════════════════════ -->
-  <h2 id="models">4. Choosing a model</h2>
-
-  <p>The model dropdown selects the AI used for <strong>writing and E-E-A-T polish</strong>. Analysis, hallucination scan, QC and SEO always use <strong>Gemini 2.5 Flash</strong>. The web-verify step always uses <strong>Perplexity Sonar Pro</strong>. These are fixed regardless of your selection.</p>
-
-  <table>
-    <tr><th>Model</th><th>Best for</th><th>Approx. cost/article</th></tr>
-    <tr><td>Gemini 2.5 Flash ⚡ <span class="dim">(default)</span></td><td>Everyday use — fast, reliable, cheap</td><td>&lt; £0.01</td></tr>
-    <tr><td>Gemini 2.5 Pro</td><td>Higher quality, still reasonable cost</td><td>~£0.02</td></tr>
-    <tr><td>GPT-4.1 Mini</td><td>OpenAI quality on a budget</td><td>~£0.01</td></tr>
-    <tr><td>GPT-4.1 / GPT-4o</td><td>Strong structured writing</td><td>~£0.02-0.03</td></tr>
-    <tr><td>OpenAI o3-mini</td><td>Reasoning model — slower but very thorough</td><td>~£0.02</td></tr>
-    <tr><td>Claude Haiku 4.5</td><td>Fast Anthropic model on a budget</td><td>~£0.01</td></tr>
-    <tr><td>Claude Sonnet 4</td><td>Nuanced, authoritative tone</td><td>~£0.03</td></tr>
-    <tr><td>Claude Opus 4</td><td>Highest quality, slowest</td><td>~£0.10</td></tr>
-    <tr><td>Mistral Small / Large</td><td>Clean structured prose</td><td>~£0.01-0.02</td></tr>
-    <tr><td>Grok 3 Mini / Grok 3</td><td>Good tone, worth testing</td><td>~£0.01-0.03</td></tr>
-    <tr><td>Llama 4 Scout / Maverick</td><td>Meta's latest — very cheap</td><td>&lt; £0.01</td></tr>
-    <tr><td>DeepSeek V3 / R1</td><td>Cheap alternative, test quality</td><td>&lt; £0.01</td></tr>
-    <tr><td>Perplexity Sonar / Sonar Pro</td><td>Web-search capable — extra live research in article</td><td>~£0.01-0.02</td></tr>
-  </table>
-
+  <!-- ── 2 ── -->
+  <h2 id="how-it-works">2. How It Works</h2>
+  <p>The generator runs entirely in the browser (hosted free on GitHub Pages). It talks to a Cloudflare Worker which proxies API calls (keeping the API key secret), fetches RSS feeds, extracts article text from URLs, scrapes reference sites, and stores feedback in permanent KV storage.</p>
   <div class="card info">
-    <span class="label info">TIP</span> The <strong>cost estimate</strong> shown in the UI is approximate. Every article also spends a small amount on Perplexity Sonar Pro for the web-verify step (~£0.005), regardless of which writing model you choose.
+    <p><span class="label info">ARCHITECTURE</span> Browser &rarr; Cloudflare Worker &rarr; OpenRouter API (20+ AI models) + Perplexity Sonar Pro (live web research) + RSS feeds + Reference sites + KV feedback storage</p>
   </div>
 
-  <!-- ═══════════════════════════════ PIPELINE ═══════════════════════════════ -->
-  <h2 id="pipeline">5. The generation pipeline</h2>
+  <!-- ── 3 ── -->
+  <h2 id="using-it">3. Using the Generator</h2>
+  <h3>News Feed tab (default)</h3>
+  <p>Shows live headlines from BBC Sport, Sky Sports, The Athletic, and The Guardian. Click any headline to expand it, select a category, and click <strong>Generate WhatChan Article</strong>. You can also paste a URL directly or upload a PDF/DOCX/TXT as extra context.</p>
 
-  <p>Every article goes through these steps automatically. Watch the pipeline bar and Activity Log for progress.</p>
+  <h3>Evergreen tab</h3>
+  <p>Pre-built topics that are always relevant (e.g. "Premier League Top Scorer 2026"). Select one or more, set batch size, and generate. The <strong>Topical Article Builder</strong> at the top lets you pick a team + type (Transfer News, Match Preview, etc.) for timely articles.</p>
 
-  <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Fetch</strong> — The worker retrieves the full article text from the source URL. Any uploaded files or URL context you added are merged in here as trusted facts.</div></div>
-  <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Web Verify (Perplexity)</strong> — <strong>Perplexity Sonar Pro</strong> runs a live web search to verify current facts for the article topic: current manager, current club of each player, playing status, recent results, league position. This runs <em>before</em> writing starts. It's the primary defence against AI models using stale training data (e.g. "Estêvão is at Palmeiras" when he's been at Chelsea for months).</div></div>
-  <div class="step"><div class="step-num">3</div><div class="step-body"><strong>Analyse</strong> — Gemini 2.5 Flash reads the source and extracts key facts, names, quotes, stats, and the main angle. The web-verified facts are injected here as authoritative ground truth.</div></div>
-  <div class="step"><div class="step-num">4</div><div class="step-body"><strong>Write</strong> — Your selected model writes a completely original article. The writer is given both the analysed source facts and the web-verified current facts, and is explicitly instructed not to introduce any time-sensitive information not in those sources. Truncated quotes (from RSS feeds cut at 200 chars) are blocked — the AI must omit or paraphrase them.</div></div>
-  <div class="step"><div class="step-num">4b</div><div class="step-body"><strong>Hallucination scan</strong> — Gemini 2.5 Flash compares the draft against the source + verified facts. Checks for: invented names, fabricated quotes, <strong>truncated quotes</strong>, invented stats, wrong current managers, wrong player clubs, wrong playing status. Suspect content is flagged and removed.</div></div>
-  <div class="step"><div class="step-num">5</div><div class="step-body"><strong>QC + SEO</strong> — Source-traceability check (can every claim be traced to the source or verified facts?) runs first. If it fails, the article is automatically rewritten with the fixes applied, then a <strong>second QC pass</strong> runs. SEO fields are then generated: 5 title options, 2 meta descriptions, up to 10 tags, 3 focus keyphrases, URL slug.</div></div>
-  <div class="step"><div class="step-num">6</div><div class="step-body"><strong>E-E-A-T Polish</strong> — Your selected model reviews and strengthens Experience, Expertise, Authoritativeness, Trustworthiness signals. Enhances pullquotes, stat cards, and source attributions.</div></div>
+  <h3>Generated tab</h3>
+  <p>All generated articles appear here with badges, action buttons, and collapsible panels. Articles persist for 7 days in your browser. Each card shows: category badge, model badge (purple), article length, QC verdict, and review status.</p>
 
-  <p>The final output includes: full article HTML, schema.org Article + Breadcrumb JSON-LD, SEO data block, banners (WhatChan only), and a tag strip.</p>
+  <!-- ── 4 ── -->
+  <h2 id="custom-topic">4. Custom Topic &amp; Club Templates</h2>
+  <p>The <strong>Custom Topic</strong> card in the News Feed tab lets you write about anything. When Football is selected as the sport:</p>
+  <ul>
+    <li>A <strong>Club / Team</strong> dropdown appears (grouped by league: PL, Championship, League One, etc.)</li>
+    <li>A <strong>URL Context</strong> field appears for pasting match report or stats page URLs</li>
+    <li>Selecting a category <strong>auto-fills an expert journalist template</strong> into the description box</li>
+  </ul>
+  <div class="card good">
+    <p><span class="label good">14 TEMPLATES</span> One for every football category, written from the perspective of an Editor, Football Expert, Writer, and QC Agent. Each covers every section a sports journalist would be expected to include. Templates use <code>[CLUB]</code> placeholder replaced with your selected club name.</p>
+  </div>
+  <p>You can always edit, delete, or add to the template text. If you manually type into the description, changing the category will not overwrite your edits.</p>
+
+  <!-- ── 5 ── -->
+  <h2 id="match-articles">5. Match Preview &amp; Match Report</h2>
+  <p>When you select a club + "Match Previews" or "Match Reports" category, the generator runs a <strong>deep research pipeline</strong> instead of the standard one.</p>
+
+  <h3>What gets researched automatically</h3>
+  <table>
+    <tr><th>Source</th><th>Data</th></tr>
+    <tr><td>Perplexity Sonar Pro</td><td>Next fixture / last result, form (both teams), H2H, injuries, managers, TV</td></tr>
+    <tr><td>premierinjuries.com</td><td>PL injury table — player names, injury types, return dates</td></tr>
+    <tr><td>rotowire.com/soccer/lineups.php</td><td>Expected lineups for EPL, UCL, La Liga, Serie A, etc.</td></tr>
+    <tr><td>live-footballontv.com</td><td>UK TV channel, kick-off time, streaming options</td></tr>
+    <tr><td>WhoScored / FootyStats / SoccerStats</td><td>Player ratings, season stats, xG, tactical data</td></tr>
+  </table>
+  <p>Reference sites are fetched <strong>in parallel</strong> with the Perplexity research for speed.</p>
+
+  <div class="card warn">
+    <p><span class="label warn">QUALITY RULES</span> Every sentence must contain a specific fact. Generic filler like "both teams will be looking to" is banned. If a section has no real data, it is omitted entirely. Pullquotes must be real quotes from real people, never fabricated.</p>
+  </div>
+
+  <!-- ── 6 ── -->
+  <h2 id="models">6. Choosing a Model</h2>
+  <p>The dropdown in the header lets you pick from 20+ models across Google, OpenAI, Anthropic, Mistral, xAI, Meta, DeepSeek, and Perplexity. The model you select is used for the main writing step and E-E-A-T polish. Analysis, QC, and hallucination scanning always use Gemini 2.5 Flash (cost-efficient).</p>
+  <p>Each generated article shows a <strong>purple model badge</strong> so you know which model wrote it. Feedback is tied to the specific model, so the learning system knows which model made which mistakes.</p>
+
+  <!-- ── 7 ── -->
+  <h2 id="pipeline">7. The Generation Pipeline</h2>
+  <h3>Standard articles (News Feed / URL / Evergreen)</h3>
+  <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Verify</strong> &mdash; Perplexity Sonar Pro searches the web for current facts (managers, results, standings).</div></div>
+  <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Analyse</strong> &mdash; Gemini extracts key facts from the source. Web-verified facts marked <code>[VERIFIED]</code>.</div></div>
+  <div class="step"><div class="step-num">3</div><div class="step-body"><strong>Write</strong> &mdash; Your selected model writes the full article using only verified facts as ground truth.</div></div>
+  <div class="step"><div class="step-num">4</div><div class="step-body"><strong>Hallucination scan</strong> &mdash; Compares draft against source. Strips fabricated facts, fake quotes, generic filler. <em>Findings saved to feedback memory.</em></div></div>
+  <div class="step"><div class="step-num">5</div><div class="step-body"><strong>QC + SEO</strong> &mdash; Source-traceability check with <strong>auto-retry loop</strong> (up to 3 attempts). SEO fields generated.</div></div>
+  <div class="step"><div class="step-num">6</div><div class="step-body"><strong>E-E-A-T polish</strong> &mdash; Experience, Expertise, Authoritativeness, Trustworthiness enhancement.</div></div>
+
+  <h3>Match articles (Match Preview / Match Report)</h3>
+  <p>Same as above but preceded by deep research: Perplexity fixture research + reference site scraping + stats research. All run before the writing step.</p>
+
+  <!-- ── 8 ── -->
+  <h2 id="quality">8. Quality Controls &amp; Auto-Retry</h2>
+
+  <div class="card good">
+    <p><span class="label good">AUTO-RETRY</span> If QC fails, the article is automatically rewritten with all accumulated issues and QC'd again &mdash; up to <strong>3 total attempts</strong>. QC-FAIL articles only reach you if all 3 attempts are exhausted.</p>
+  </div>
+
+  <h3>Hallucination scan categories</h3>
+  <p><code>current_manager</code>, <code>current_club</code>, <code>current_status</code>, <code>fake_quote</code>, <code>truncated_quote</code>, <code>invented_stat</code>, <code>invented_name</code>, <code>placeholder</code>, <code>generic_filler</code>, <code>fabricated_quote</code></p>
 
   <h3>Article badges</h3>
-  <p>Each generated article in the Generated tab shows one of two quality badges:</p>
-  <ul>
-    <li><span class="label good">&#10003; Web-Verified</span> — Perplexity verified facts, hallucination scan clean, QC passed. Safe to publish.</li>
-    <li><span class="label warn">&#9888; REVIEW BEFORE PUBLISHING</span> — Either the hallucination scan flagged something, or QC failed even after a rewrite. Read carefully before publishing.</li>
-  </ul>
-  <p>White label articles also show a <span class="label blue">White Label</span> badge.</p>
-
-  <!-- ═══════════════════════════════ SEO PANEL ═══════════════════════════════ -->
-  <h2 id="seo">6. SEO panel</h2>
-
-  <p>Click <strong>SEO</strong> on any article card to expand the full SEO panel. All fields have individual <strong>Copy</strong> buttons.</p>
-
   <table>
-    <tr><th>Field</th><th>What it is</th><th>How to use</th></tr>
-    <tr><td><strong>H1 Headline</strong></td><td>Keyword-rich article headline, under 80 chars</td><td>Use as the article title in WordPress</td></tr>
-    <tr><td><strong>SEO Title Options (1-5)</strong></td><td>Five options for the browser tab / Google result title, each 50-65 chars with character count shown</td><td>Pick the best one, paste into the SEO Title field in Yoast/RankMath</td></tr>
-    <tr><td><strong>Meta Description Options (1-2)</strong></td><td>Two options, each 120-160 chars with character count shown</td><td>Pick one, paste into the Meta Description field in Yoast/RankMath</td></tr>
-    <tr><td><strong>URL Slug</strong></td><td>Keyword-first, hyphenated, max 8 words</td><td>Paste into the WordPress permalink field</td></tr>
-    <tr><td><strong>Tags (up to 10)</strong></td><td>Mix of named entities (clubs, players, competitions), sport, and topic descriptors</td><td>Paste the whole comma-separated list into WordPress post tags</td></tr>
-    <tr><td><strong>Focus Keyphrases (3)</strong></td><td>2-4 word phrases people would search for; verified to appear verbatim in the article</td><td>Each shows ✓ in article or ✗ not found. Only use phrases marked ✓ as Yoast focus keyphrases — exact match is required.</td></tr>
+    <tr><td><span class="label good">&#10003; Web-Verified</span></td><td>All steps passed, no review needed</td></tr>
+    <tr><td><span class="label red">&#9888; REVIEW BEFORE PUBLISHING</span></td><td>QC failed after 3 retries, or hallucinations were found and removed</td></tr>
+    <tr><td><span class="label blue">White Label</span></td><td>Article was generated in white label mode</td></tr>
+    <tr><td><span class="label purple">Model Name</span></td><td>Which AI model wrote this article</td></tr>
   </table>
 
-  <div class="card info">
-    <span class="label info">NOTE</span> Focus keyphrases are generated from the article body text, then verified against the final published article at display time. If one shows <strong>✗ not found</strong>, the E-E-A-T polish step may have rephrased that section — don't use it as a Yoast focus keyphrase.
-  </div>
+  <!-- ── 9 ── -->
+  <h2 id="feedback">9. Feedback &amp; Learning System</h2>
+  <p>The generator <strong>learns from every mistake</strong>. Feedback is stored permanently in Cloudflare KV &mdash; it survives browser clears, works across devices, and compounds over months.</p>
 
-  <!-- ═══════════════════════════════ SAVED ARTICLES ═══════════════════════════════ -->
-  <h2 id="saved">7. Saved articles</h2>
-
-  <p>Generated articles are automatically saved in your browser and survive page refreshes, tab closes, and browser restarts. You can generate a batch of 10, come back the next day, and they'll all be there.</p>
-
-  <ul>
-    <li>Articles are saved in your browser's <strong>localStorage</strong> — they are specific to this browser and device</li>
-    <li>Articles expire automatically after <strong>7 days</strong> — they are pruned on page load</li>
-    <li>Each card shows when it was saved: <em>saved today, saved yesterday, saved 3d ago</em></li>
-    <li>Click <strong>Delete</strong> on a card to remove it immediately (after you've published it or decided not to use it)</li>
-  </ul>
-
-  <div class="card warn">
-    <span class="label warn">NOTE</span> localStorage is per-browser, per-domain. If you clear browser data or use a different browser/device, articles are gone. The WordPress HTML is in the copied output — always <strong>Copy HTML</strong> anything you want to keep before clearing browser data.
-  </div>
-
-  <!-- ═══════════════════════════════ WHITE LABEL ═══════════════════════════════ -->
-  <h2 id="whitelabel">8. White Label mode</h2>
-
-  <p>The <strong>White Label</strong> checkbox sits in the bar directly below the model and article length controls. Tick it to reveal the white label options.</p>
-
-  <div class="card blue">
-    <span class="label blue">White Label</span> When active, all articles are generated without WhatChan branding — no banners, no WhatChan mentions, schema uses your domain. A blue <strong>White Label</strong> badge appears on the article card.
-  </div>
-
-  <h3>Domain</h3>
-  <p>Enter the client's domain (e.g. <code>sportsblog.co.uk</code>). All schema.org URLs (article URL, publisher URL, breadcrumb) will use <code>https://sportsblog.co.uk/blog/...</code> instead of the WhatChan URL. Leave blank and the schema URLs will use <code>example.com</code> as a placeholder.</p>
-
-  <h3>Author name</h3>
-  <p>Enter the author's name — this replaces Adrian Dane in the article byline and schema.org author field.</p>
-  <p><strong>Leave blank for fully anonymous:</strong> no author credit anywhere in the article, no Editor's Note section, no author in the schema. The AI is explicitly instructed not to include any byline.</p>
-
-  <h3>Banners</h3>
-  <p>Both banners (the sport TV banner mid-article and the blog banner at the bottom) are automatically removed for all white label articles — you do not need to do anything. The generated HTML will contain only the article content.</p>
-
-  <h3>Workflow for white label articles</h3>
-  <ol>
-    <li>Tick <strong>White Label</strong></li>
-    <li>Enter the client's domain and author name (or leave author blank for anonymous)</li>
-    <li>Generate the article as normal</li>
-    <li>Use <strong>Copy HTML</strong> for WordPress, or <strong>DOCX</strong> for a Word document</li>
-    <li>When done, untick White Label to return to WhatChan mode</li>
-  </ol>
-
-  <!-- ═══════════════════════════════ DOCX ═══════════════════════════════ -->
-  <h2 id="docx">9. DOCX export</h2>
-
-  <p>Every article card has a <strong>DOCX</strong> button. Click it to download the article as a <code>.docx</code> Word file, named after the URL slug.</p>
-
-  <p>The Word document contains a clean version of the article:</p>
-  <ul>
-    <li>Headings, paragraphs, bold, italic — standard Word formatting</li>
-    <li>Pull quotes converted to Word blockquotes</li>
-    <li>Editor's Note converted to italic paragraph</li>
-  </ul>
-
-  <p>The following are stripped from the DOCX (they're WordPress-specific):</p>
-  <ul>
-    <li>Schema.org JSON-LD scripts</li>
-    <li>SEO comment block</li>
-    <li>CSS style blocks</li>
-    <li>Sport TV banner and blog banner</li>
-    <li>Stats strip cards</li>
-    <li>Tag strip</li>
-  </ul>
-
-  <div class="card info">
-    <span class="label info">TIP</span> DOCX export works for both WhatChan articles and white label articles. For white label, the DOCX is the cleanest option — no banners were ever added, so you get pure article content ready to hand off to a client.
-  </div>
-
-  <div class="card warn">
-    <span class="label warn">NOTE</span> The DOCX library loads from a CDN when the page first opens. If you click DOCX immediately after opening the page, it may say "not loaded yet — please wait a moment". Wait 2-3 seconds and try again.
-  </div>
-
-  <!-- ═══════════════════════════════ OPENROUTER ═══════════════════════════════ -->
-  <h2 id="openrouter">10. Managing OpenRouter credits</h2>
-
-  <div class="card warn">
-    <span class="label warn">ACTION REQUIRED</span> <strong>Keep credits topped up.</strong> If your balance hits zero, the generator will fail silently with API errors. Check your balance at <a href="https://openrouter.ai/credits" style="color:#f0c842;">openrouter.ai/credits</a>.
-  </div>
-
-  <h3>Cost guide</h3>
-  <ul>
-    <li>With Gemini 2.5 Flash as the writing model, each article costs roughly <strong>£0.01-0.02</strong> total (including all pipeline steps)</li>
-    <li>With Claude Opus 4, expect <strong>£0.10-0.15</strong> per article</li>
-    <li>&pound;10 in credits = roughly 500-1000 articles with the default model</li>
-  </ul>
-
-  <h3>Spend cap (do this now if not done)</h3>
-  <ol>
-    <li>Go to <a href="https://openrouter.ai/settings/limits" style="color:#79c0ff;">openrouter.ai/settings/limits</a></li>
-    <li>Set a monthly spending limit (e.g. &pound;10)</li>
-    <li>This protects you if anyone finds the tool URL and tries to abuse it</li>
-  </ol>
-
-  <h3>Adding credits</h3>
-  <ol>
-    <li>Go to <a href="https://openrouter.ai/credits" style="color:#79c0ff;">openrouter.ai/credits</a></li>
-    <li>Click <strong>Add credits</strong> and pay by card</li>
-    <li>Credits are available immediately — no need to redeploy anything</li>
-  </ol>
-
-  <!-- ═══════════════════════════════ SECURITY ═══════════════════════════════ -->
-  <h2 id="security">11. Security</h2>
-
+  <h3>What triggers learning</h3>
   <table>
-    <tr><th>Risk</th><th>Protection in place</th></tr>
-    <tr><td>API key leaked to browser</td><td>Key stored only as Cloudflare Worker secret — never in the HTML</td></tr>
-    <tr><td>Someone finds the URL and uses your credits</td><td>Worker secret token (<code>wc-9f2k4p8m</code>) — requests without it are rejected</td></tr>
-    <tr><td>Unlimited abuse if token is found</td><td>OpenRouter monthly spend cap (set this yourself)</td></tr>
-    <tr><td>Other websites embedding the tool</td><td>CORS <code>ALLOWED_ORIGINS</code> blocks cross-site requests</td></tr>
+    <tr><th>Event</th><th>Source type</th><th>Saved automatically?</th></tr>
+    <tr><td>Hallucination scan strips content</td><td><code>auto-hallucination</code></td><td>Yes</td></tr>
+    <tr><td>QC requires retries to pass</td><td><code>auto-qc-corrected</code></td><td>Yes</td></tr>
+    <tr><td>QC exhausts all 3 attempts</td><td><code>auto-qc-exhausted</code></td><td>Yes</td></tr>
+    <tr><td>Editor clicks Feedback button</td><td><code>human</code></td><td>Yes, on submit</td></tr>
   </table>
 
-  <div class="card info">
-    <span class="label info">NOTE</span> The secret token is visible in the HTML source (it has to be, so the browser can send it). Your GitHub repo is public (required for free GitHub Pages). The token is your first line of defence, the spend cap is your backstop.
-  </div>
+  <h3>How to give feedback</h3>
+  <p>Click the purple <strong>Feedback</strong> button on any article card. Describe what needs fixing in the textarea and click <strong>Reprocess Article</strong>. The article goes through the full pipeline again with your feedback injected, and updates in place.</p>
 
-  <h3>If you suspect abuse</h3>
-  <ol>
-    <li>Check your OpenRouter usage at <a href="https://openrouter.ai/activity" style="color:#79c0ff;">openrouter.ai/activity</a></li>
-    <li>Change the token: update <code>WC_TOKEN</code> in <code>docs/index.html</code>, run <code>npx wrangler secret put WC_SECRET</code> with the new value, and push</li>
-  </ol>
+  <h3>Model-aware learning</h3>
+  <p>Each feedback entry records which model generated the article. On future articles:</p>
+  <ul>
+    <li><strong>Same model</strong> sees its own feedback as "YOUR DIRECT FEEDBACK" (harshest framing)</li>
+    <li><strong>Different model</strong> sees it as "SHARED KNOWLEDGE (from [model name])" (advisory)</li>
+    <li>Repeating a known mistake after being warned is treated as <strong>worse</strong> than the original error</li>
+  </ul>
 
-  <!-- ═══════════════════════════════ DEPLOYING ═══════════════════════════════ -->
-  <h2 id="deploying">12. Making changes and deploying</h2>
+  <!-- ── 10 ── -->
+  <h2 id="seo">10. SEO Panel</h2>
+  <p>Click <strong>SEO</strong> on any article card to see all generated SEO fields:</p>
+  <ul>
+    <li><strong>H1</strong> &mdash; keyword-rich headline</li>
+    <li><strong>5 SEO title options</strong> &mdash; 50-65 chars each, with individual copy buttons and character counts</li>
+    <li><strong>2 meta description options</strong> &mdash; 120-160 chars each</li>
+    <li><strong>URL slug</strong> &mdash; keyword-first, lowercase, hyphenated</li>
+    <li><strong>Tags</strong> &mdash; up to 10, with Copy All button</li>
+    <li><strong>3 focus keyphrases</strong> &mdash; verified against the article with &#10003;/&#10007; indicators</li>
+  </ul>
 
-  <h3>Changing the frontend (docs/index.html)</h3>
-  <p>Edit the file, then:</p>
+  <!-- ── 11 ── -->
+  <h2 id="saved">11. Saved Articles</h2>
+  <p>Articles save to your browser automatically and persist for <strong>7 days</strong>. They survive page refreshes and browser restarts. Cards show "saved today", "saved yesterday", or "saved 3d ago".</p>
+  <p>Click <strong>Delete</strong> on any card to remove it. Articles are per-browser, per-domain (different browsers have separate article lists, but feedback memory is shared via Cloudflare KV).</p>
+
+  <!-- ── 12 ── -->
+  <h2 id="whitelabel">12. White Label Mode</h2>
+  <p>Tick the <strong>White Label</strong> checkbox below the model selector. Enter a domain name and optionally an author name. Effects:</p>
+  <ul>
+    <li>Schema uses your domain instead of whatchan.co.uk</li>
+    <li>Author credit uses your name (or no byline if left blank)</li>
+    <li>Both banners (sport TV + blog) are suppressed</li>
+    <li>No WhatChan mentions anywhere in the article</li>
+    <li>Blue <span class="label blue">White Label</span> badge on the card</li>
+  </ul>
+
+  <!-- ── 13 ── -->
+  <h2 id="docx">13. DOCX Export</h2>
+  <p>Click <strong>DOCX</strong> on any article card to download a Word document. The export strips all code (schema, SEO comments, banners, tags) and produces clean formatted text suitable for editing in Word or Google Docs.</p>
+
+  <!-- ── 14 ── -->
+  <h2 id="openrouter">14. OpenRouter &amp; Costs</h2>
+  <p>All AI models are accessed through <a href="https://openrouter.ai" style="color:#79c0ff;">OpenRouter</a>. Set a monthly spend cap at <code>https://openrouter.ai/settings/limits</code> (recommended: &pound;10/month). The estimated cost per article is shown in the header. Cheaper models (Gemini Flash, Llama Scout) cost fractions of a penny; premium models (Claude Opus 4, GPT-4.1) cost a few pence each.</p>
+
+  <!-- ── 15 ── -->
+  <h2 id="security">15. Security</h2>
+  <ul>
+    <li>The OpenRouter API key is stored as a Cloudflare Worker secret &mdash; never in the HTML</li>
+    <li>The <code>WC_TOKEN</code> in the HTML is a lightweight gate; the spend cap is the real protection</li>
+    <li>CORS restricts which websites can call the worker</li>
+    <li>KV feedback data is only accessible through the authenticated worker API</li>
+  </ul>
+
+  <!-- ── 16 ── -->
+  <h2 id="deploying">16. Deploying Changes</h2>
+  <h3>Frontend (GitHub Pages)</h3>
   <pre>git add docs/index.html
-git commit -m "Description of change"
+git commit -m "Description"
 git push</pre>
-  <p>Wait ~2 minutes, then test in an <strong>incognito window</strong> (Ctrl+Shift+N) to avoid seeing a cached version.</p>
+  <p>Rebuilds in ~2 minutes. Always test in incognito.</p>
 
-  <h3>Changing the worker (worker/src/index.js)</h3>
+  <h3>Worker (Cloudflare)</h3>
   <pre>cd worker
 npx wrangler deploy</pre>
-  <p>This deploys immediately — no waiting.</p>
 
-  <h3>Updating worker secrets</h3>
-  <pre>cd worker
-npx wrangler secret put OPENROUTER_API_KEY
-npx wrangler secret put WC_SECRET</pre>
+  <h3>Rolling back</h3>
+  <p>Every change is version-controlled in git. To see all versions:</p>
+  <pre>git log --oneline</pre>
+  <p>To revert to a specific version:</p>
+  <pre>git revert &lt;commit-hash&gt;</pre>
+  <p>Tagged releases (e.g. <code>v2.0</code>) provide named snapshots you can return to at any time.</p>
 
-  <h3>Viewing worker logs (for debugging)</h3>
-  <pre>cd worker
-npx wrangler tail</pre>
-
-  <h3>Adding a new AI model to the dropdown</h3>
-  <p>Find the <code>var MODELS = [</code> array in <code>docs/index.html</code>. Add a new entry:</p>
-  <pre>{ id: 'provider/model-name', label: 'Display Name', free: false, costIn: 0.001, costOut: 0.004 }</pre>
-  <p>Model IDs come from <a href="https://openrouter.ai/models" style="color:#79c0ff;">openrouter.ai/models</a> — use the ID shown under each model name.</p>
-
-  <!-- ═══════════════════════════════ TROUBLESHOOTING ═══════════════════════════════ -->
-  <h2 id="troubleshooting">13. Troubleshooting</h2>
-
+  <!-- ── 17 ── -->
+  <h2 id="troubleshooting">17. Troubleshooting</h2>
   <table>
-    <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
-    <tr>
-      <td>Pipeline failed: Rate limited</td>
-      <td>Too many requests too fast</td>
-      <td>Wait 60 seconds and retry. The pipeline retries automatically up to 5 times.</td>
-    </tr>
-    <tr>
-      <td>Pipeline failed: No endpoints found for...</td>
-      <td>Model ID is wrong or that model was removed from OpenRouter</td>
-      <td>Check the model ID at openrouter.ai/models. Update the MODELS array in index.html.</td>
-    </tr>
-    <tr>
-      <td>Pipeline failed: Unauthorised</td>
-      <td>WC_SECRET worker secret not set or wrong value</td>
-      <td>Run <code>npx wrangler secret put WC_SECRET</code> and enter <code>wc-9f2k4p8m</code></td>
-    </tr>
-    <tr>
-      <td>Pipeline failed: Missing Authentication</td>
-      <td>OPENROUTER_API_KEY secret not set on worker</td>
-      <td>Run <code>npx wrangler secret put OPENROUTER_API_KEY</code> and paste your key</td>
-    </tr>
-    <tr>
-      <td>Old version of site showing after push</td>
-      <td>GitHub Pages cache</td>
-      <td>Open in incognito (Ctrl+Shift+N) or press Ctrl+Shift+R to hard-refresh</td>
-    </tr>
-    <tr>
-      <td>News feed not loading</td>
-      <td>RSS feeds temporarily down, or worker error</td>
-      <td>Click the refresh button. If all feeds fail, check the worker is deployed.</td>
-    </tr>
-    <tr>
-      <td>Article shows wrong manager or player at wrong club</td>
-      <td>Perplexity web-verify step failed or returned incomplete data</td>
-      <td>Check Activity Log for "Web research unavailable". Regenerate. Adding the correct URL (Wikipedia, club site) as URL context also helps.</td>
-    </tr>
-    <tr>
-      <td>Article has [insert date] or invented names</td>
-      <td>Hallucination scan missed it, or model misbehaved</td>
-      <td>Check the REVIEW badge — if shown, the scan flagged something. Regenerate with a higher-quality model.</td>
-    </tr>
-    <tr>
-      <td>PDF upload shows red error / 0 chars</td>
-      <td>Scanned/image-based PDF — no text layer present</td>
-      <td>Use the <strong>URL context field</strong> instead (paste the web page URL). Or save as .txt or .docx first.</td>
-    </tr>
-    <tr>
-      <td>URL context "Failed: No usable text extracted"</td>
-      <td>Site blocked the worker's fetch, or page is JavaScript-rendered</td>
-      <td>Try a different URL for the same content (e.g. BBC instead of a paywalled site).</td>
-    </tr>
-    <tr>
-      <td>Focus keyphrase shows ✗ not found</td>
-      <td>E-E-A-T polish rephrased that section after keyphrases were generated</td>
-      <td>Don't use it as a Yoast focus keyphrase. Use the ✓ ones, or manually find a phrase that appears in the article.</td>
-    </tr>
-    <tr>
-      <td>DOCX button says "not loaded yet"</td>
-      <td>html-docx-js CDN library still loading</td>
-      <td>Wait 2-3 seconds after the page opens and try again.</td>
-    </tr>
-    <tr>
-      <td>Articles disappeared after clearing browser data</td>
-      <td>localStorage was cleared</td>
-      <td>Articles are browser-specific. Always Copy HTML before clearing browser data.</td>
-    </tr>
-    <tr>
-      <td>OpenRouter credits ran out mid-article</td>
-      <td>Balance hit zero</td>
-      <td>Top up at openrouter.ai/credits. Set a monthly spend cap so it doesn't happen again.</td>
-    </tr>
+    <tr><th>Problem</th><th>Fix</th></tr>
+    <tr><td>Page shows old version after push</td><td>Hard-refresh (Ctrl+Shift+R) or test in incognito</td></tr>
+    <tr><td>API errors / 401</td><td>Check OpenRouter credit balance and spend cap</td></tr>
+    <tr><td>Rate limited (429)</td><td>Built-in retry with exponential backoff. Wait a few seconds.</td></tr>
+    <tr><td>Keyphrase shows &#10007;</td><td>The model didn't use it verbatim. Edit the article to include it, or regenerate.</td></tr>
+    <tr><td>DOCX button does nothing</td><td>The html-docx-js CDN may be slow. Wait a few seconds and retry.</td></tr>
+    <tr><td>Articles disappeared</td><td>Articles auto-expire after 7 days, or you cleared browser data. Feedback is safe in KV.</td></tr>
+    <tr><td>Feedback not loading</td><td>Check the worker is deployed with KV binding. Falls back to localStorage if offline.</td></tr>
+    <tr><td>QC keeps failing after 3 retries</td><td>The source context may not contain enough data. Add extra context via URL or file upload.</td></tr>
+    <tr><td>Match Preview has no injury data</td><td>premierinjuries.com may be blocking the scrape. The Perplexity fallback should still find basic data.</td></tr>
+    <tr><td>Generic filler in match article</td><td>Submit feedback via the Feedback button. The system will learn and avoid it in future articles.</td></tr>
   </table>
 
-  <h3>Checking what went wrong</h3>
-  <p>The <strong>Activity Log</strong> (bottom left of the tool) shows every step. Look for lines marked in red — they contain the exact error message from OpenRouter. Key things to spot:</p>
-  <ul>
-    <li><code>[API] model=...</code> — confirms which model is actually being used</li>
-    <li><code>Web research unavailable: ...</code> — Perplexity verify step failed (article continues without it, but check the REVIEW badge)</li>
-    <li><code>Hallucinations detected (N)</code> — shows the scan found and flagged invented content</li>
-    <li><code>QC FAIL — rewriting with fixes</code> — automatic rewrite triggered; a second QC pass will follow</li>
-    <li><code>Rate limited (attempt X/5)</code> — retrying automatically, wait for it</li>
-    <li><code>[White Label]</code> in the starting log line — confirms white label mode was active for that run</li>
-  </ul>
-
   <hr>
-  <p class="dim" style="text-align:center;">WhatChan Article Generator &mdash; Built by Adrian Dane &mdash; April 2026</p>
+  <p class="dim">WhatChan Article Generator &mdash; built by Adrian Dane. Feedback memory powered by Cloudflare Workers KV.</p>
 
 </div>
 </body>

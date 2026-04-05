@@ -2,7 +2,7 @@
 
 This file is read automatically at the start of every Claude Code session in this directory.
 Do not delete it. Update it when significant changes are made.
-**Last updated: April 2026**
+**Last updated: 5 April 2026**
 
 ---
 
@@ -15,10 +15,11 @@ The tool generates fully formatted, WordPress-ready HTML articles from:
 - Live RSS news feeds (click any headline → Generate)
 - A pasted URL (fetches and rewrites any article)
 - Evergreen topics and match-specific templates (Match Preview, Match Review, Fixtures)
+- Custom Topics with expert journalist templates and optional club selection
 
 Supported sports: Football, Darts, Boxing, Snooker, Formula 1, Rugby, Other.
 
-**White Label mode** is also supported — produce unbranded articles for other domains/clients, with a custom author name (or fully anonymous), no banners, and domain-specific schema.
+**White Label mode** — produce unbranded articles for other domains/clients, with a custom author name (or fully anonymous), no banners, and domain-specific schema.
 
 ---
 
@@ -26,11 +27,13 @@ Supported sports: Football, Darts, Boxing, Snooker, Formula 1, Rugby, Other.
 
 ```
 Browser (GitHub Pages)
-  → Cloudflare Worker (CORS proxy + secret holder)
-    → OpenRouter API (AI models)
+  → Cloudflare Worker (CORS proxy + secret holder + KV feedback storage)
+    → OpenRouter API (20+ AI models)
     → Perplexity Sonar Pro (live web research)
     → RSS feeds (BBC, Sky, Guardian, PDC, Autosport etc.)
+    → Reference sites (premierinjuries.com, rotowire.com, live-footballontv.com)
     → Article URL extraction
+    → Cloudflare KV (permanent feedback/learning memory)
 ```
 
 ### Live URLs
@@ -51,10 +54,10 @@ Blog Generator/
 ├── GUIDE.html                 ← user manual (open in browser)
 ├── README.md                  ← setup instructions
 ├── docs/
-│   └── index.html             ← entire frontend (single file, ~4000+ lines)
+│   └── index.html             ← entire frontend (single file, ~4200 lines)
 └── worker/
-    ├── src/index.js           ← Cloudflare Worker (proxy + RSS parser)
-    ├── wrangler.toml          ← worker config (name: whatchan-api-proxy)
+    ├── src/index.js           ← Cloudflare Worker (proxy + RSS + feedback API)
+    ├── wrangler.toml          ← worker config (KV binding: FEEDBACK)
     └── package.json
 ```
 
@@ -68,159 +71,248 @@ Blog Generator/
 | `WC_TOKEN` | `wc-9f2k4p8m` | Must match `WC_SECRET` worker secret |
 | `FREE_MODEL` | `google/gemini-2.5-flash` | Analysis, QC, SEO, hallucination scan |
 | `RESEARCH_MODEL` | `perplexity/sonar-pro` | Pre-research — live web verification |
-| `ACTIVE_MODEL` | defaults to `MODELS[0].id` | User-selected writing model (Gemini 2.5 Flash) |
+| `ACTIVE_MODEL` | defaults to `MODELS[0].id` | User-selected writing model |
 | `AUTHOR.name` | `Adrian Dane` | Used for WhatChan articles; overridden by White Label |
-| `CURRENT_WL` | `null` or `{domain, author, noBanners}` | Set at start of each generation run; null = WhatChan mode |
-| `STORAGE_KEY` | `wc_articles_v1` | localStorage key for persisted articles |
+| `CURRENT_WL` | `null` or `{domain, author, noBanners}` | Set at start of each generation run |
+| `STORAGE_KEY` | `wc_articles_v1` | localStorage key for persisted articles (7-day TTL) |
+| `FEEDBACK_KEY` | `wc_feedback_v1` | localStorage fallback for feedback (primary is KV) |
+| `S.feedbackMemory` | `[]` | In-memory cache of feedback entries, loaded from KV at init |
 
 ---
 
-## Generation Pipeline (6 steps)
+## Generation Pipeline
 
 Every article goes through this pipeline. **Accuracy is the top priority** — accuracy over speed, accuracy over completeness.
 
-1. **Verify** — `RESEARCH_MODEL` (Perplexity Sonar Pro) searches the live web before writing begins. Verifies: current manager, player club/status, recent results, current standings. Output stored as `VERIFIED CURRENT FACTS`. Fails gracefully if Perplexity unavailable.
+### Standard Pipeline (News Feed / URL / Evergreen)
 
-2. **Analyse** — `FREE_MODEL` extracts key facts from source article. Web-verified facts are marked `[VERIFIED]` and given priority over source text if they conflict.
+1. **Verify** — `RESEARCH_MODEL` (Perplexity Sonar Pro) searches the live web. Verifies managers, player status, results, standings. Output: `VERIFIED CURRENT FACTS`. Fails gracefully.
+2. **Analyse** — `FREE_MODEL` extracts key facts. Web-verified facts marked `[VERIFIED]` and prioritised.
+3. **Write** — Selected model writes full HTML article. Time-sensitive facts ONLY from context.
+4. **Hallucination scan** — `FREE_MODEL` compares draft against source. Categories: `current_manager`, `current_club`, `current_status`, `fake_quote`, `truncated_quote`, `invented_stat`, `invented_name`, `placeholder`, `generic_filler`, `fabricated_quote`. Stripped automatically. **Findings saved to feedback memory.**
+5. **QC + SEO** — Source-traceability check with auto-retry loop (see below). SEO fields generated separately.
+6. **E-E-A-T polish** — Experience, Expertise, Authoritativeness, Trustworthiness enhancement.
 
-3. **Write** — Selected model writes the full HTML article using source facts + web-verified facts as ground truth. Time-sensitive facts (manager, player status, results) may ONLY be stated if present in provided context — never from training knowledge.
+### Match Article Pipeline (Match Preview / Match Review)
 
-4. **Hallucination scan** — `FREE_MODEL` compares draft against source + verified facts. Flags and auto-removes: `current_manager`, `current_club`, `current_status`, `fake_quote`, `truncated_quote`, `invented_stat`, `invented_name`, `placeholder`. `stripHallucinations()` removes flagged sentences.
+When a club is selected + category is "Match Previews" or "Match Reports":
 
-5. **QC + SEO** — `FREE_MODEL` runs a **source-traceability check** (not factual accuracy — model cannot know current facts). Checks that every time-sensitive claim is traceable to the provided context. If FAIL: `rewriteWithFixes()` corrects issues, then a **second QC pass** runs on the rewrite. SEO fields generated separately (sequential, not parallel).
+1. **Research** — `preResearchMatch()` via Perplexity Sonar Pro finds specific fixture/result data (opponent, date, score, form, H2H, injuries, managers, TV). Demands "NOT FOUND" for missing data — never generic statements.
+2. **Reference sites** — `fetchReferenceSites()` auto-scrapes **in parallel** with step 1:
+   - `premierinjuries.com/injury-table.php` — injury data
+   - `rotowire.com/soccer/lineups.php` — expected lineups
+   - `live-footballontv.com` — UK TV broadcast listings
+3. **Stats** — `fetchMatchStats()` via Perplexity pulls WhoScored / FootyStats / SoccerStats data.
+4. **Write** — With CRITICAL ACCURACY RULES: every sentence must contain a specific fact; omit sections without real data; no generic filler; quotes must be real.
+5. **Hallucination scan** — same as standard but findings saved to feedback memory.
+6. **QC + auto-retry** — up to 3 attempts (see below).
+7. **E-E-A-T polish**.
 
-6. **E-E-A-T polish** — Selected model enhances Experience, Expertise, Authoritativeness, Trustworthiness.
+### Auto-Retry QC Loop (`retryUntilPass`)
 
-**Output badges on every article:**
-- Green **✓ Web-Verified** — all steps passed
-- Red **⚠ REVIEW BEFORE PUBLISHING** — hallucinations found/fixed, or QC failed even after rewrite
-- Blue **White Label** — article was generated in white label mode
+QC-FAIL articles **never reach the editor without exhausting automated fixes**:
 
-Output: WordPress-ready HTML block with schema.org JSON-LD, SEO comment block, banners (WhatChan only — suppressed for white label), tags.
+```
+Write → QC
+  → PASS → E-E-A-T
+  → FAIL → rewrite with ALL accumulated issues → QC (attempt 2)
+    → PASS → E-E-A-T
+    → FAIL → rewrite with ALL accumulated issues → QC (attempt 3)
+      → PASS → E-E-A-T
+      → FAIL → save all issues to feedback memory → surface with red badge
+```
+
+Each retry carries the **full accumulated issues** from every previous pass. Issues are deduplicated. Feedback is saved whether QC passes on retry or exhausts all attempts.
 
 ---
 
-## Extra Context (trusted facts for the writer)
+## Football Category Templates
 
-Each generation panel has two ways to add trusted context — treated as ground truth:
-1. **File upload**: PDF (text-based only), DOCX, TXT
-2. **URL field**: paste any URL (Sky Sports, Wikipedia, stats page) — worker fetches it
+14 expert journalist templates auto-fill the Custom Topic description when a category is selected with Football as the sport. Written from combined perspectives:
+- **Editor** — angles, completeness, what readers need
+- **Football Expert** — tactical depth, specific stats to source
+- **Writer** — narrative structure, how to open each section
+- **QC Agent** — verifiability, what must be confirmed not assumed
 
-File and URL context are merged with `\n\n---\n\n` separator and passed as `TRUSTED ADDITIONAL CONTEXT` throughout the pipeline including the hallucination scan.
+Templates: Season Analysis, Transfer News, Injury Updates, Competition Guides, Broadcaster Guides, Team Guides, Manager Features, Player Features, Match Previews, Match Reports, Club News, Awards, Fan Features, Fixture Analysis.
 
-**PDF caveat**: Scanned/image PDFs extract 0 chars. The UI shows a clear red error and suggests the URL context field or saving as .txt instead.
+Templates use `[CLUB]` placeholder replaced with the selected club name. Auto-fill only triggers if the textarea is empty or was previously auto-filled (user edits are never overwritten).
 
 ---
 
-## SEO Fields (generated at step 5)
+## Feedback Memory (Learning System)
 
-`genSeoFields(spec, articleBody)` receives the article draft body so keyphrases are grounded in actual content. Returns:
+### Storage: Cloudflare Workers KV
+
+Permanent, cross-device, edge-distributed. No TTL — entries persist forever.
+
+**Worker routes:**
+- `GET /api/feedback` — returns all entries from KV
+- `POST /api/feedback` — adds entry with deduplication
+- `DELETE /api/feedback` — clears all entries (admin)
+
+**KV namespace:** `FEEDBACK` (id: `5b31d7cca89744d0a9761e302eb19436`)
+
+**Frontend:** `loadFeedbackFromServer()` fetches at init → caches in `S.feedbackMemory`. `saveFeedbackEntry()` POSTs to server + updates cache. Falls back to localStorage if offline.
+
+### Entry Schema
+
+```javascript
+{
+  id: 'fb-1712345678000-a3x9',
+  category: 'Match Previews',
+  typeId: 'preview',
+  sport: 'football',
+  model: 'google/gemini-2.5-flash',
+  source: 'human' | 'auto-hallucination' | 'auto-qc-corrected' | 'auto-qc-exhausted',
+  articleTitle: 'Manchester United vs Leeds...',
+  feedback: 'Too much generic filler...',
+  qcIssues: [{ severity: 'critical', description: '...' }],
+  timestamp: 1712345678000
+}
+```
+
+### What Triggers Feedback Saves
+
+| Trigger | Source type | When |
+|---------|-----------|------|
+| Hallucination scan strips items | `auto-hallucination` | Every scan that finds items (4 locations) |
+| QC passes on retry 2 or 3 | `auto-qc-corrected` | Retry succeeds but issues were found |
+| QC exhausts all 3 attempts | `auto-qc-exhausted` | All retries failed |
+| Human clicks Feedback button | `human` | Editor provides specific notes |
+
+### Model-Aware Learning
+
+`buildFeedbackLessons(currentModel)` produces two tiers:
+
+| Scenario | Framing in prompt |
+|----------|------------------|
+| Same model made the mistake | **YOUR DIRECT FEEDBACK:** (harshest — repeating = critical failure) |
+| Different model made it | **SHARED KNOWLEDGE (from [model name]):** (advisory — but repeating after warning is worse) |
+
+Injected into:
+- `getSystemPrompt()` → "EDITORIAL LESSONS LEARNED"
+- `getQcSystem()` → "HISTORICAL EDITORIAL FEEDBACK — EXTRA STRICT, automatic FAIL"
+
+### Human Feedback UI
+
+Purple **Feedback** button on every article card. Opens a collapsible panel with:
+- Textarea for editorial notes
+- **Reprocess Article** button → runs full pipeline: rewrite with feedback → hallucination scan → QC (with retry loop) → E-E-A-T → SEO
+- Article updates **in place** (same index in `S.generated`)
+- Feedback saved to KV before reprocessing begins
+- `feedbackHistory` array on the article object tracks all editorial notes
+
+---
+
+## Match Preview / Report Quality Rules
+
+### Banned Phrases (in match articles — automatic QC failure)
+
+"both teams will be looking to", "is expected to be", "could pose challenges", "promises to be an exciting", "eager to", "determined to make their mark", "will aim to leverage", "the outcome often hinges on", "tactical discipline being key", "a closely fought encounter", "will be looking to impose their style", "according to recent reports", "data suggests"
+
+### Section Omission Rule
+
+If a section (e.g. Team News) has no specific data from the research, it must be **omitted entirely** — never filled with generic text. A shorter article with real facts beats a longer article with waffle.
+
+### Pullquote Rule
+
+Must be a REAL quote from a real person in the source. If no quotes exist, use a strong stat (e.g. "W4 D0 L1 — Team's record in the last 5 home matches") with the source as attribution. Never fabricate quotes.
+
+### Reference Sites (auto-fetched for football match articles)
+
+| Site | Data provided |
+|------|--------------|
+| `premierinjuries.com/injury-table.php` | PL injury table — player names, injury types, return dates |
+| `rotowire.com/soccer/lineups.php` | Expected lineups for EPL, UCL, La Liga, Serie A, Bundesliga, MLS |
+| `live-footballontv.com` | UK TV channel, kick-off time, streaming options |
+
+---
+
+## Article Object Schema
+
+```javascript
+{
+  spec: { title, category, keywords, team, typeId, isTopical, source },
+  wp: '...WordPress HTML block...',
+  seo: { h1, titleOptions, metaOptions, urlSlug, tags, keyphrases, keyphraseMatches, allKeywords },
+  status: 'done',
+  articleLength: 'standard' | 'medium' | 'longform' | 'custom',
+  qc: { verdict, confidence, issues, verified_facts },
+  model: 'google/gemini-2.5-flash',
+  matchContext: '...truncated research context for reprocessing...',
+  feedbackHistory: [{ text, timestamp }],
+  needsReview: false,
+  wasRewritten: false,
+  eeatPolished: true,
+  savedAt: 1712345678000,
+  wlOptions: null | { domain, author, noBanners }
+}
+```
+
+---
+
+## SEO Fields
+
+`genSeoFields(spec, articleBody)` receives the article draft body so keyphrases are grounded in actual content.
 
 | Field | Detail |
 |-------|--------|
 | `h1` | Keyword-rich headline, under 80 chars |
-| `titleOptions` | 5 SEO title options, 50-65 chars each, with `\| WhatChan` suffix |
-| `metaOptions` | 2 meta description options, 120-160 chars each |
+| `titleOptions` | 5 SEO title options, 50-65 chars each |
+| `metaOptions` | 2 meta description options, 120-160 chars |
 | `urlSlug` | Keyword-first, lowercase, hyphenated |
-| `tags` | Up to 10 tags (named entities + topic descriptors) |
-| `keyphrases` | 3 focus keyphrases, must appear verbatim in article |
-| `keyphraseMatches` | `[{phrase, found: bool}]` — verified against final article at render time |
+| `tags` | Up to 10 tags |
+| `keyphrases` | 3 focus keyphrases, verified verbatim in article |
 | `allKeywords` | 10-15 individual keywords |
-
-The **SEO panel** (click SEO button on any article card) shows all options with individual copy buttons and ✓/✗ exact-match indicators for each keyphrase. Keyphrases are verified against `g.wp` (the final article HTML) at render time.
-
----
-
-## Article Persistence (localStorage)
-
-Articles are saved to `localStorage` key `wc_articles_v1` immediately after generation. On page load, articles older than 7 days are pruned automatically. Manual delete also updates storage.
-
-- `saveArticles()` — serialises `S.generated` to localStorage; fails silently if full
-- `loadArticles()` — loads and prunes (7-day cutoff); called first in `init()`
-- Each article stores `savedAt: Date.now()` and `wlOptions: CURRENT_WL`
-- Cards show "saved today / saved yesterday / saved Nd ago"
-- Articles persist across refreshes and browser restarts, per-browser per-domain
 
 ---
 
 ## White Label Mode
 
-Toggled via the **White Label** checkbox in the bar below the model/length controls. Sets `CURRENT_WL` at the start of each pipeline run.
+Toggled via the **White Label** checkbox. Sets `CURRENT_WL` at pipeline start.
 
-```javascript
-CURRENT_WL = { domain: 'example.com', author: 'Jane Smith', noBanners: true }
-// OR for anonymous:
-CURRENT_WL = { domain: 'example.com', author: '', noBanners: true }
-```
-
-Effects when active:
-- **`getSystemPrompt()`** — uses white label author name instead of Adrian Dane; anonymous = no editors note, no byline, no WhatChan mentions instructed
-- **`buildWpBlock()`** — `siteUrl` uses `https://${wl.domain}`; schema author omitted if anonymous; both banners suppressed
-- **Schema publisher** — uses domain name instead of WhatChan
-- **Article card** — shows blue **White Label** badge
-- **`wlOptions`** stored on article object and persisted in localStorage so the badge survives reload
+Effects: author override or anonymous (no byline/editors-note), domain override in schema, banners suppressed, blue badge on card, `wlOptions` persisted on article object.
 
 ---
 
 ## DOCX Export
 
-Available on every article card (WhatChan and white label). Uses `html-docx-js` CDN.
-
-**`buildCleanHtml(wp)`** strips from the WordPress block:
-- SEO comment block, JSON-LD script tags, style blocks, HTML comments
-- Banner divs, tag strip, stats strip
-- Converts pullquotes → `<blockquote>`, editors-note → `<em>` paragraph
-- Removes `wc-post` wrapper and class/style attributes
-
-**`downloadDocx(idx)`** — wraps the clean HTML in a full document with basic Word-compatible CSS, calls `htmlDocx.asBlob()`, triggers download named after the URL slug.
-
-CDN: `https://unpkg.com/html-docx-js@0.3.1/dist/html-docx.js` (exposes `window.htmlDocx`)
+Available on every article card. Uses `html-docx-js` CDN. `buildCleanHtml(wp)` strips SEO/schema/banners/tags, converts pullquotes to blockquotes. `downloadDocx(idx)` triggers download.
 
 ---
 
-## Cloudflare Worker Secrets
+## Cloudflare Worker
 
-Two secrets stored in Cloudflare (set with `npx wrangler secret put <NAME>`):
+### Secrets
+| Secret | Purpose |
+|--------|---------|
+| `OPENROUTER_API_KEY` | Authenticates OpenRouter API calls |
+| `WC_SECRET` | Token auth — frontend must send matching `X-WC-Token` |
 
-| Secret name | Value | Purpose |
-|-------------|-------|---------|
-| `OPENROUTER_API_KEY` | (OpenRouter key) | Authenticates API calls to OpenRouter |
-| `WC_SECRET` | `wc-9f2k4p8m` | Token frontend must send — blocks unauthorised use |
+### KV Bindings
+| Binding | Namespace ID | Purpose |
+|---------|-------------|---------|
+| `FEEDBACK` | `5b31d7cca89744d0a9761e302eb19436` | Permanent feedback/learning memory |
 
-**To redeploy the worker after code changes:**
+### Routes
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/messages` | POST | Proxy to OpenRouter API |
+| `/api/rss` | GET | Fetch + parse RSS feeds by sport |
+| `/api/fetch-article` | POST | Extract text from any URL |
+| `/api/feedback` | GET | Read all feedback entries from KV |
+| `/api/feedback` | POST | Add feedback entry to KV |
+| `/api/feedback` | DELETE | Clear all feedback entries |
+
+### Deployment
 ```bash
 cd worker
 npx wrangler deploy
 ```
 
-**Important:** `Access-Control-Allow-Headers` in the worker must include `Content-Type, X-WC-Token` — otherwise browsers reject all requests in the CORS preflight.
-
----
-
-## GitHub Pages Deployment
-
-The site deploys automatically from the `main` branch, `/docs` folder.
-After any `git push`, GitHub Pages rebuilds in ~2 minutes.
-
-```bash
-git add docs/index.html
-git commit -m "Description of change"
-git push
-```
-
-**Cache warning:** Always test in incognito (Ctrl+Shift+N) or hard-refresh (Ctrl+Shift+R) after pushing.
-
----
-
-## Security
-
-- Frontend HTML is in a **public** GitHub repo (required for free GitHub Pages)
-- `WC_TOKEN` is visible in source — acceptable because the OpenRouter spend cap limits damage
-- `OPENROUTER_API_KEY` is stored only as a Cloudflare Worker secret — never in the HTML
-- **OpenRouter spend cap** must be set: https://openrouter.ai/settings/limits (£10/month recommended)
-- CORS `ALLOWED_ORIGINS` blocks other websites embedding the tool
-- `WC_SECRET` on the worker blocks direct API abuse (curl, Postman etc.)
-- `Access-Control-Allow-Headers` must list `X-WC-Token` or all browser requests fail at preflight
+CORS: `Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS`
+`Access-Control-Allow-Headers: Content-Type, X-WC-Token`
 
 ---
 
@@ -238,83 +330,49 @@ Default: `google/gemini-2.5-flash`
 | xAI | Grok 3 Mini, Grok 3 |
 | Meta | Llama 4 Scout, Llama 4 Maverick |
 | DeepSeek | DeepSeek V3, DeepSeek R1 |
-| Perplexity | Sonar, Sonar Pro (have live web access) |
+| Perplexity | Sonar, Sonar Pro (live web access) |
 
-### Hardcoded models (not user-selectable)
+### Hardcoded models
 - `FREE_MODEL = google/gemini-2.5-flash` — analysis, QC, SEO, hallucination scan
-- `RESEARCH_MODEL = perplexity/sonar-pro` — pre-research web verification step
+- `RESEARCH_MODEL = perplexity/sonar-pro` — pre-research and match stats
 
-**Free models removed** — `:free` suffix models have strict shared rate limits causing persistent 429 errors.
-
----
-
-## Quality Controls
-
-### Core principle
-AI training data is out of date. The pipeline NEVER trusts the model's own knowledge for time-sensitive facts (current manager, player club, recent results). All such facts must come from the provided source, verified facts, or trusted context.
-
-### System prompt rules (`getSystemPrompt()`)
-- British English throughout
-- Pure HTML output — no markdown (`**` = broken, must use `<strong>`)
-- Time-sensitive facts (manager, player status, results) ONLY if in provided context
-- FAQ answers ONLY from provided context — never from training knowledge
-- Author: Adrian Dane (WhatChan) or white label author or no byline — never invented names
-- No clichés, no padding, no placeholder text
-- Never reproduce truncated quotes (quotes ending with `...`) — omit or paraphrase
-
-### Pre-research (`preResearch()`, uses `RESEARCH_MODEL`)
-Perplexity Sonar Pro searches the web before writing. Creates `VERIFIED CURRENT FACTS` document used throughout the pipeline. Fails gracefully.
-
-### Hallucination scan (`hallucinationScan()`)
-Compares draft against source + verified facts. Critical categories: `current_manager`, `current_club`, `current_status`, `fake_quote`, **`truncated_quote`**, `invented_stat`, `invented_name`, `placeholder`. `stripHallucinations()` removes flagged sentences.
-
-### QC (`getQcSystem()`)
-**Source-traceability check** — asks "is this claim in the source?" not "is this fact correct?". If FAIL: mandatory `rewriteWithFixes()` + second QC pass. Articles that fail QC (even after rewrite) get red "REVIEW BEFORE PUBLISHING" badge.
-
-### Markdown cleanup (`cleanMarkdown()`)
-Applied to all output. Converts stray markdown to HTML. Strips `[insert...]`, `[TBC]`, `[unknown...]`. Also strips truncated quoted text (regex for `"text..."` in straight and curly quotes).
+Article cards show a **purple model badge** indicating which model wrote each article.
 
 ---
 
-## Banner Placement
+## GitHub Pages Deployment
 
-- **Sport TV banner**: `insertMidBanner()` finds nearest `<h2>` to 50% of article, inserts banner there
-- **Blog banner**: always at the bottom before tags
-- Both in `buildWpBlock()` — **suppressed entirely for white label articles**
+Deploys from `main` branch, `/docs` folder. After `git push`, rebuilds in ~2 minutes.
+Always test in incognito (Ctrl+Shift+N) or hard-refresh (Ctrl+Shift+R).
 
 ---
 
-## RSS Feeds (worker/src/index.js)
+## Security
 
-| Sport | Sources |
-|-------|---------|
-| Football | BBC Sport, Sky Sports, The Athletic, Guardian |
-| Darts | BBC Sport, Sky Sports, PDC |
-| Boxing | BBC Sport, Sky Sports, Guardian |
-| Snooker | BBC Sport, Eurosport |
-| F1 | BBC Sport, Sky Sports, Guardian, Autosport |
-| Rugby | BBC Sport, Sky Sports, Guardian |
+- Frontend HTML is public (required for free GitHub Pages)
+- `WC_TOKEN` visible in source — OpenRouter spend cap limits damage
+- `OPENROUTER_API_KEY` stored only as Cloudflare Worker secret
+- **OpenRouter spend cap**: https://openrouter.ai/settings/limits
+- CORS `ALLOWED_ORIGINS` blocks other websites
+- `WC_SECRET` blocks direct API abuse
 
 ---
 
 ## Known Issues & Past Fixes
 
-| Issue | Fix applied |
-|-------|-------------|
-| Free models (`:free`) rate-limit constantly | Removed from dropdown; paid models only |
-| `google/gemini-2.0-flash-exp` deprecated | Replaced with `google/gemini-2.5-flash` |
-| `getTokenLimit()` infinite recursion | `replace_all` overwrote function body — fixed manually |
-| OpenRouter secret saved with wrong name | Key saved as secret NAME — deleted, recreated as `OPENROUTER_API_KEY` |
-| GitHub Pages cache serving stale code | Always test in incognito after pushing |
-| Pipeline parallel API calls causing 429 | QC + SEO sequential; 2s delay between all steps |
-| AI inventing analyst names ("Harry Sekulich") | Author rules in prompt + hallucination scan |
-| Raw `**markdown**` in HTML output | `cleanMarkdown()` + explicit prompt rule |
-| AI using stale training knowledge (wrong manager, wrong club) | `RESEARCH_MODEL` pre-research + source-only rules + traceability QC |
-| Adding `X-WC-Token` header broke all requests | Browser preflight rejects custom headers unless listed in `Access-Control-Allow-Headers` — fixed in worker |
-| Scanned/image PDFs showing 0 chars silently | Now shows red error + Activity Log message suggesting URL context or .txt |
-| QC rewrite had no second pass | Second mandatory QC pass added after `rewriteWithFixes()` |
-| Truncated RSS quotes reaching published article | 3-layer fix: system prompt rule, `truncated_quote` hallucination category, `cleanMarkdown()` regex |
-| Articles lost on page refresh | `localStorage` persistence with 7-day auto-expiry |
+| Issue | Fix |
+|-------|-----|
+| Free models rate-limit | Removed; paid models only |
+| Generic filler in match articles | Banned phrases list + `generic_filler` hallucination category + section omission rule |
+| Fabricated pullquotes | `fabricated_quote` hallucination category + real-quotes-only match rule |
+| QC FAIL articles reaching editor | Auto-retry loop (3 attempts) with accumulated issues |
+| No learning from mistakes | Cloudflare KV feedback memory + model-aware prompt injection |
+| Feedback lost on browser clear | Migrated from localStorage to KV API (permanent, cross-device) |
+| Missing injury data | Auto-fetch premierinjuries.com + Perplexity checks |
+| Missing TV channel info | Auto-fetch live-footballontv.com + explicit Perplexity instruction |
+| Truncated RSS quotes | 3-layer fix: prompt rule + `truncated_quote` scan + `cleanMarkdown()` regex |
+| Articles lost on refresh | localStorage persistence with 7-day auto-expiry |
+| AI using stale training knowledge | Perplexity pre-research + source-only rules + traceability QC |
 
 ---
 
@@ -324,10 +382,11 @@ Full brief at: `C:\Users\Dj4be\Documents\Blog articles claude\PROJECT-BRIEF.md`
 
 Key rules:
 - British English throughout
-- WhatChan articles authored by **Adrian Dane** — white label articles use client author or anonymous
+- WhatChan articles by **Adrian Dane** — white label uses client author or anonymous
 - No clichés, no padding, no repetition
 - Facts only from source/verified context — never invented
-- No placeholder text in output
-- No em dashes or en dashes in article prose
-- Time-sensitive facts (manager, player status) only from source — never from training
-- Never reproduce truncated quotes (RSS feeds cut descriptions at 200 chars)
+- No placeholder text, no em dashes in prose
+- Time-sensitive facts only from source — never from training
+- Never reproduce truncated quotes
+- Every sentence in match articles must contain a specific fact
+- Reference sites (premierinjuries.com, rotowire.com, live-footballontv.com) must be checked for match articles
