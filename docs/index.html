@@ -1659,7 +1659,7 @@ function delay(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
 
 // Clean stray markdown from LLM output — safety net
 function cleanMarkdown(html) {
-  return html
+  var cleaned = html
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/(?<![<\/\w])\*(.+?)\*(?![>])/g, '<em>$1</em>')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -1673,6 +1673,13 @@ function cleanMarkdown(html) {
     .replace(/"[^"<>]{3,}\.{3}"?/g, '')
     .replace(/\u201c[^\u201d<>]{3,}\.{3}\u201d?/g, '')
     .replace(/&ldquo;[^<>]{3,}\.{3}(?:&rdquo;)?/g, '');
+  // Fix invented bylines — replace any "By [Fake Name]" with the correct author
+  // Only fix if NOT in White Label mode (CURRENT_WL handles its own author)
+  if (!CURRENT_WL) {
+    cleaned = cleaned.replace(/By\s+(?!Adrian\s+Dane)[A-Z][a-z]+\s+[A-Z][a-z]+(?:,\s*[^<\n]{0,60})?/g,
+      'By ' + AUTHOR.name + ', WhatChan Chief Football Analyst');
+  }
+  return cleaned;
 }
 
 function apiPost(payload, _retryCount) {
@@ -2021,8 +2028,10 @@ function getSystemPrompt() {
               + '- Do NOT include a wc-editors-note section\n'
               + '- Do NOT mention WhatChan anywhere in this article\n\n')
         : '- This article is written by ' + AUTHOR.name + ', WhatChan ' + sport.label + ' writer\n'
-          + '- Do NOT invent analyst names, reporter names, or any other fictional bylines\n'
-          + '- The only author credit should be: ' + AUTHOR.name + '\n\n')
+          + '- The ONLY name that may appear as author, byline, or analyst is: ' + AUTHOR.name + '\n'
+          + '- NEVER invent author names, analyst names, reporter names, editor names, or any other fictional person as a byline or attribution\n'
+          + '- If you include a byline under the headline, it MUST say: "By ' + AUTHOR.name + ', WhatChan Chief Football Analyst" — EXACTLY this, no variations\n'
+          + '- Any other name in a byline position is a CRITICAL ERROR\n\n')
     + 'WRITING RULES:\n'
     + '- British English throughout (colour, programme, licence, organised, analyse, etc.)\n'
     + '- Tone: informed, warm, direct — like a trusted ' + sportLabel + ' journalist talking to a fan\n'
@@ -2459,7 +2468,8 @@ function hallucinationScan(articleHtml, sourceText, trustedContext) {
     + '- Any statistic or record not in source — major\n'
     + '- Placeholder text: [insert ...], [TBC], [unknown] — critical\n'
     + '- GENERIC FILLER: Sentences that contain NO specific fact (no name, no number, no date, no score) and could apply to literally any match — critical. Examples: "both teams will be looking to put on a strong performance", "the midfield is expected to be a key area of contention", "the outcome often hinges on tactical discipline". These must be flagged for removal.\n'
-    + '- FABRICATED QUOTES: Any pullquote or inline quote attributed to someone where the exact words are NOT in the source — critical\n\n'
+    + '- FABRICATED QUOTES: Any pullquote or inline quote attributed to someone where the exact words are NOT in the source — critical\n'
+    + '- INVENTED BYLINE: Any author name, analyst name, or byline that is NOT "Adrian Dane" (unless White Label mode specifies a different author). Names like "Jack Davies", "Sarah Mitchell", "Tom Wilson" etc. are INVENTED and must be flagged as critical — the ONLY permitted author is Adrian Dane.\n\n'
     + 'Do NOT flag: specific tactical analysis naming real players, historical facts framed as historical, opinion clearly framed as opinion, predictions based on stated evidence.\n\n'
     + 'Return ONLY a JSON object (no markdown):\n'
     + '{\n'
@@ -2835,11 +2845,14 @@ function runArticlePipeline(opts) {
       });
     })
     .then(function(result) {
-      // Build infographic: use fetched stats URL, or fall back to research context if checkbox ticked
+      // Build infographic: (1) fetched stats URL, (2) research context, (3) article body
       var infChecked = document.getElementById('infographic-check');
-      var infSource = (S.infographicData && S.infographicData.text) ? S.infographicData.text
-        : (infChecked && infChecked.checked && result.newsContext) ? result.newsContext
-        : '';
+      var infSource = '';
+      if (infChecked && infChecked.checked) {
+        if (S.infographicData && S.infographicData.text) infSource = S.infographicData.text;
+        else if (result.newsContext) infSource = result.newsContext;
+        else if (result.body) infSource = result.body;
+      }
       var infographicPromise = infSource ? buildInfographic(infSource, spec) : Promise.resolve('');
       return infographicPromise.then(function(infHtml) {
         spec._infographicHtml = infHtml;
@@ -3027,8 +3040,12 @@ function runEgGenerate() {
       })
       .then(function(result) {
         var infChecked = document.getElementById('infographic-check');
-        var infSrc = (S.infographicData && S.infographicData.text) ? S.infographicData.text
-          : (infChecked && infChecked.checked && result.matchContext) ? result.matchContext : '';
+        var infSrc = '';
+        if (infChecked && infChecked.checked) {
+          if (S.infographicData && S.infographicData.text) infSrc = S.infographicData.text;
+          else if (result.matchContext) infSrc = result.matchContext;
+          else if (result.body) infSrc = result.body;
+        }
         var infP = infSrc ? buildInfographic(infSrc, spec) : Promise.resolve('');
         return infP.then(function(infHtml) {
           spec._infographicHtml = infHtml;
@@ -3683,11 +3700,14 @@ function generateFromCustom() {
 
   // Shared finish + cleanup helpers used by both pipelines
   function finish(result, hadHallucinations) {
-    // Infographic sources: (1) fetched stats URL, (2) match research context, (3) skip
+    // Infographic sources: (1) fetched stats URL, (2) match research context, (3) article body itself
     var infChecked = document.getElementById('infographic-check');
-    var infSource = (S.infographicData && S.infographicData.text) ? S.infographicData.text
-      : (infChecked && infChecked.checked && result.matchContext) ? result.matchContext
-      : '';
+    var infSource = '';
+    if (infChecked && infChecked.checked) {
+      if (S.infographicData && S.infographicData.text) infSource = S.infographicData.text;
+      else if (result.matchContext) infSource = result.matchContext;
+      else if (result.body) infSource = result.body; // fallback: extract stats from the article itself
+    }
     var infP = infSource ? buildInfographic(infSource, spec) : Promise.resolve('');
     infP.then(function(infHtml) {
       spec._infographicHtml = infHtml;
