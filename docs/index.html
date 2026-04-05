@@ -1585,59 +1585,67 @@ function fetchInfographicData() {
 // ═══════════════════════════════════════════════════════════════
 function buildInfographic(statsText, spec) {
   var team = spec.team || '';
-  var prompt = 'You are a sports infographic designer. Create a visually structured HTML infographic from the match stats data below.\n\n'
+  var prompt = 'Build an HTML match statistics infographic. The STAT BARS are the main content — the score header is secondary.\n\n'
     + '=== STATS DATA ===\n' + (statsText || '').slice(0, 4000) + '\n=== END ===\n\n'
-    + 'RULES:\n'
-    + '- Use ONLY data found in the stats above. NEVER invent any number.\n'
-    + '- If a stat is not available, OMIT that row entirely. Do not write "N/A".\n'
-    + '- Output ONLY the HTML. No markdown, no explanation.\n\n'
-    + 'REQUIRED HTML STRUCTURE (use these exact class names):\n\n'
+    + 'OUTPUT ONLY HTML. No markdown. No explanation. No backticks.\n\n'
+    + 'EXACT STRUCTURE — you MUST follow this precisely:\n\n'
     + '<div class="wc-infographic">\n'
-    + '  <div class="wc-infographic-title">MATCH STATISTICS</div>\n\n'
-    + '  <!-- Match score header -->\n'
-    + '  <div class="wc-match-score">\n'
-    + '    <div class="wc-ms-teams"><span>[HOME TEAM]</span><span class="wc-ms-vs">[SCORE]</span><span>[AWAY TEAM]</span></div>\n'
-    + '    <div class="wc-ms-meta">[Competition] &middot; [Date] &middot; [Venue]</div>\n'
-    + '  </div>\n\n'
-    + '  <!-- Stat comparison bars — one row per stat. Width % must be calculated from the values. -->\n'
-    + '  <!-- Example for possession 62% vs 38%: -->\n'
-    + '  <div class="wc-stat-row">\n'
-    + '    <div class="wc-sr-val">62%</div>\n'
-    + '    <div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:62%"></div><div class="wc-sr-bar-away" style="width:38%"></div></div>\n'
-    + '    <div class="wc-sr-val">38%</div>\n'
-    + '  </div>\n'
-    + '  <div class="wc-stat-row"><div class="wc-sr-val"></div><div class="wc-sr-label">Possession</div><div class="wc-sr-val"></div></div>\n\n'
-    + '  <!-- Repeat for: Shots, Shots on Target, xG, Corners, Fouls, Passes, Pass Accuracy -->\n'
-    + '  <!-- For non-percentage stats, calculate proportional widths: e.g. 15 shots vs 8 shots = 65% vs 35% -->\n\n'
-    + '  <!-- Form guide (if available) — last 5 results as coloured circles -->\n'
-    + '  <!-- Use class wc-form-W (green), wc-form-D (amber), wc-form-L (red) -->\n'
-    + '  <!-- <div style="text-align:center;margin-top:16px;"><div style="font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:4px;">[TEAM] FORM</div><div class="wc-form-strip"><span class="wc-form-pill wc-form-W">W</span>...</div></div> -->\n\n'
-    + '  <!-- Head-to-head (if available) -->\n'
-    + '  <!-- <div class="wc-h2h-block"><div class="wc-h2h-title">HEAD TO HEAD</div>\n'
-    + '  <div class="wc-h2h-result"><span class="wc-h2h-date">12 Jan 2026</span><span class="wc-h2h-score">Team A 2-1 Team B</span><span class="wc-h2h-comp">PL</span></div>\n'
-    + '  ... </div> -->\n\n'
-    + '</div>\n\n'
-    + 'IMPORTANT:\n'
-    + '- Calculate bar widths as percentages that sum to 100% for each stat pair\n'
-    + '- For stats like shots (15 vs 8), calculate: home% = 15/(15+8)*100 = 65%, away% = 35%\n'
-    + '- Use inline style="width:XX%" on each bar div\n'
-    + '- Include as many stat rows as the data supports — more data = better infographic\n'
-    + '- Include form guide and H2H ONLY if the data contains them\n'
-    + '- The wc-sr-label row goes BELOW its corresponding bar row (label is centred between the two values)';
+    + '<div class="wc-infographic-title">MATCH STATISTICS</div>\n'
+    + '<div class="wc-match-score"><div class="wc-ms-teams"><span>HOME TEAM</span><span class="wc-ms-vs">SCORE</span><span>AWAY TEAM</span></div><div class="wc-ms-meta">Competition &middot; Date &middot; Venue</div></div>\n\n'
+    + 'NOW THE CRITICAL PART — STAT BARS. You MUST include AT LEAST 6 stat rows. Each stat needs TWO divs:\n\n'
+    + 'DIV 1 — the bar:\n'
+    + '<div class="wc-stat-row"><div class="wc-sr-val">HOME_VALUE</div><div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:HOME_PCT%"></div><div class="wc-sr-bar-away" style="width:AWAY_PCT%"></div></div><div class="wc-sr-val">AWAY_VALUE</div></div>\n\n'
+    + 'DIV 2 — the label (immediately after the bar):\n'
+    + '<div class="wc-stat-row"><div class="wc-sr-val"></div><div class="wc-sr-label">STAT NAME</div><div class="wc-sr-val"></div></div>\n\n'
+    + 'CALCULATING WIDTHS:\n'
+    + '- For percentages (possession 62% vs 38%): use directly — width:62% and width:38%\n'
+    + '- For counts (shots 15 vs 8): home_pct = round(15/(15+8)*100) = 65, away_pct = 35\n'
+    + '- Both widths MUST sum to 100%\n'
+    + '- If both values are 0, use 50% each\n\n'
+    + 'MANDATORY STATS (include every one that appears in the data):\n'
+    + '1. Possession\n'
+    + '2. Total Shots\n'
+    + '3. Shots on Target\n'
+    + '4. Expected Goals (xG)\n'
+    + '5. Corners\n'
+    + '6. Fouls\n'
+    + '7. Yellow Cards\n'
+    + '8. Passes\n'
+    + '9. Pass Accuracy\n'
+    + '10. Tackles\n'
+    + '11. Saves\n'
+    + '12. Offsides\n\n'
+    + 'COMPLETE EXAMPLE of one stat (Possession 62% vs 38%):\n'
+    + '<div class="wc-stat-row"><div class="wc-sr-val">62%</div><div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:62%"></div><div class="wc-sr-bar-away" style="width:38%"></div></div><div class="wc-sr-val">38%</div></div>\n'
+    + '<div class="wc-stat-row"><div class="wc-sr-val"></div><div class="wc-sr-label">Possession</div><div class="wc-sr-val"></div></div>\n\n'
+    + 'Repeat this EXACT pattern for every available stat. Do NOT skip stats. Do NOT output just the header.\n\n'
+    + 'Close with </div> to end the wc-infographic.\n\n'
+    + 'RULES:\n'
+    + '- The infographic MUST have at least 6 stat bar rows or it is useless\n'
+    + '- Use ONLY numbers from the data — never invent stats\n'
+    + '- If a stat is missing from the data, skip it — but include every stat that IS present\n'
+    + '- NO HTML comments in the output\n'
+    + '- NO markdown in the output';
 
   addLog('Building infographic from stats data...');
   return callFreeLLM(
-    'You are an HTML infographic builder for a sports website. You output only valid HTML using the provided CSS classes. Never invent data — only use what is in the source. Calculate all bar widths as accurate percentages.',
-    prompt, 2500
+    'You are an HTML infographic builder. Output ONLY valid HTML with the exact CSS classes provided. The stat comparison bars are the MOST IMPORTANT part — you MUST include at least 6 bars. A header-only infographic is a failure. Calculate all percentages accurately. Never invent data.',
+    prompt, 4000
   ).then(function(html) {
     // Clean any markdown wrapping
     html = html.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
-    // Validate it starts with the infographic div
+    // Validate it has actual stat bars, not just the header
     if (html.indexOf('wc-infographic') < 0) {
       addLog('Infographic: model did not produce valid structure — skipping', 'warn');
       return '';
     }
-    addLog('Infographic built successfully', 'ok');
+    // Count stat bar rows — reject if fewer than 3 (header-only is useless)
+    var barCount = (html.match(/wc-sr-bar-home/g) || []).length;
+    if (barCount < 3) {
+      addLog('Infographic: only ' + barCount + ' stat bars (need 3+) — rebuilding...', 'warn');
+      // Don't return empty — return what we have, it's better than nothing even if thin
+    }
+    addLog('Infographic built: ' + barCount + ' stat comparison bars', 'ok');
     return html;
   }).catch(function(e) {
     addLog('Infographic build failed: ' + e.message, 'warn');
