@@ -6,6 +6,25 @@ Do not delete it. Update it when significant changes are made.
 
 ---
 
+## Documentation Rules — MANDATORY
+
+These rules apply to every Claude Code session working on this project:
+
+1. **After every major change** (new feature, pipeline change, worker update, schema change), update ALL THREE documentation files:
+   - `CLAUDE.md` — technical reference for Claude Code sessions
+   - `GUIDE.html` — user manual for Adrian (assume the reader knows NOTHING about code, APIs, or git — explain everything in plain English with step-by-step instructions)
+   - `CHANGELOG.md` — version-by-version detail with knock-on effects
+
+2. **After any session lasting more than 30 minutes**, create a documentation checkpoint even if changes seem minor. Small changes compound and documentation drifts fast.
+
+3. **Tag a git release** (`git tag vX.Y`) after any session that adds or changes features. Update the version table in GUIDE.html and the CHANGELOG.md entry.
+
+4. **GUIDE.html golden rule**: write for someone who has never used a terminal, never seen a git command, and doesn't know what an API is. Every instruction must be copy-paste ready. Every concept must be explained. Better to over-explain than to assume knowledge. If in doubt, add a screenshot description, a "what this means" note, or a plain-English summary after any technical term.
+
+5. **CHANGELOG.md golden rule**: for every change, document what ELSE needs to happen. Did you change the worker? It needs redeploying. Did you add a KV namespace? Someone setting up fresh needs to create it. Did you change the article schema? Old articles in localStorage won't have the new fields. These knock-on effects are more important than the change itself.
+
+---
+
 ## What This Project Is
 
 A multi-sport AI article generator for the WhatChan sports network (whatchan.co.uk).

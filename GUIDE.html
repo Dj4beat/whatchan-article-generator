@@ -95,9 +95,16 @@
 
   <!-- ── 2 ── -->
   <h2 id="how-it-works">2. How It Works</h2>
-  <p>The generator runs entirely in the browser (hosted free on GitHub Pages). It talks to a Cloudflare Worker which proxies API calls (keeping the API key secret), fetches RSS feeds, extracts article text from URLs, scrapes reference sites, and stores feedback in permanent KV storage.</p>
+  <p>The generator is a web page that runs in your browser. You open it like any website &mdash; no software to install. Behind the scenes, it connects to several services to do the heavy lifting:</p>
+  <ul>
+    <li><strong>GitHub Pages</strong> &mdash; hosts the web page for free. When we update the code and push it to GitHub, the live site updates automatically in about 2 minutes.</li>
+    <li><strong>Cloudflare Worker</strong> &mdash; a small program that runs on Cloudflare&rsquo;s servers. It acts as a middleman between the browser and the AI services. This is necessary because (a) it keeps the API key secret (the browser can&rsquo;t hold secrets safely) and (b) it fetches RSS feeds and web pages that browsers aren&rsquo;t allowed to fetch directly due to security restrictions (called CORS).</li>
+    <li><strong>OpenRouter</strong> &mdash; a service that provides access to 20+ AI models (Google Gemini, OpenAI GPT, Anthropic Claude, etc.) through a single account. We pay per use &mdash; a few pence per article for most models.</li>
+    <li><strong>Perplexity Sonar Pro</strong> &mdash; a special AI model that can search the live web in real time. We use it to verify current facts (who manages a club right now, what the latest result was) before the article is written.</li>
+    <li><strong>Cloudflare KV</strong> &mdash; a permanent storage system on Cloudflare&rsquo;s servers. We use it to store editorial feedback and learning data. Unlike browser storage, this data survives clearing your browser, and is accessible from any device.</li>
+  </ul>
   <div class="card info">
-    <p><span class="label info">ARCHITECTURE</span> Browser &rarr; Cloudflare Worker &rarr; OpenRouter API (20+ AI models) + Perplexity Sonar Pro (live web research) + RSS feeds + Reference sites + KV feedback storage</p>
+    <p><span class="label info">IN PLAIN ENGLISH</span> You click &ldquo;Generate&rdquo; in your browser &rarr; the browser sends the request to the Cloudflare Worker &rarr; the Worker asks the AI model to write the article &rarr; the article comes back to your browser, fully formatted and ready to paste into WordPress.</p>
   </div>
 
   <!-- ── 3 ── -->
@@ -241,24 +248,36 @@
 
   <!-- ── 15 ── -->
   <h2 id="security">15. Security</h2>
+  <p>The main thing to protect is the <strong>OpenRouter API key</strong> &mdash; this is what lets the system call AI models, and each call costs money. Here&rsquo;s how it&rsquo;s protected:</p>
   <ul>
-    <li>The OpenRouter API key is stored as a Cloudflare Worker secret &mdash; never in the HTML</li>
-    <li>The <code>WC_TOKEN</code> in the HTML is a lightweight gate; the spend cap is the real protection</li>
-    <li>CORS restricts which websites can call the worker</li>
-    <li>KV feedback data is only accessible through the authenticated worker API</li>
+    <li><strong>The API key is stored on Cloudflare&rsquo;s servers</strong>, not in the web page. Nobody can see it by viewing the page source or inspecting the code.</li>
+    <li><strong>A spend cap on OpenRouter</strong> limits how much can be spent even if someone found a way to abuse it. Set this at <a href="https://openrouter.ai/settings/limits" style="color:#79c0ff;">openrouter.ai/settings/limits</a> &mdash; &pound;10/month is recommended.</li>
+    <li><strong>A token (<code>WC_TOKEN</code>)</strong> is included in every request from the browser to the Worker. If someone tries to call the Worker directly (e.g. from their own script), they need this token. It&rsquo;s visible in the page source, but combined with the spend cap, the risk is minimal.</li>
+    <li><strong>CORS restrictions</strong> mean only the official WhatChan site (and localhost for testing) can talk to the Worker. Other websites cannot send requests to it even if they know the URL.</li>
+    <li><strong>Feedback data in KV</strong> is only readable and writable through the Worker API, which requires the token. Nobody can access it directly.</li>
   </ul>
+  <div class="card warn">
+    <p><span class="label warn">IMPORTANT</span> The code is in a <strong>public</strong> GitHub repository (required for free GitHub Pages hosting). This means anyone can read the HTML source code. This is fine &mdash; the only secret (the API key) is stored on Cloudflare, not in the code. The spend cap is your safety net.</p>
+  </div>
 
   <!-- ── 16 ── -->
   <h2 id="deploying">16. Deploying Changes</h2>
-  <h3>Frontend (GitHub Pages)</h3>
-  <pre>git add docs/index.html
-git commit -m "Description"
-git push</pre>
-  <p>Rebuilds in ~2 minutes. Always test in incognito.</p>
+  <h3>Frontend (the website — GitHub Pages)</h3>
+  <p>The live website is just the file <code>docs/index.html</code> hosted on GitHub. When you update this file and push it to GitHub, the live site updates automatically in about 2 minutes. Here are the commands:</p>
+  <pre>git add docs/index.html          # Stage the changed file (tell git "I want to save this change")
+git commit -m "Description"      # Save the change with a message describing what you did
+git push                         # Upload the saved change to GitHub — the live site updates automatically</pre>
+  <p><strong>Always test after pushing:</strong> Open the site in an incognito/private window (Ctrl+Shift+N in Chrome) to make sure you see the latest version. Normal browser windows sometimes show a cached (old) version.</p>
 
-  <h3>Worker (Cloudflare)</h3>
-  <pre>cd worker
-npx wrangler deploy</pre>
+  <h3>Worker (the Cloudflare backend)</h3>
+  <p>The Worker is the middleman that handles API calls, RSS feeds, and feedback storage. If you change any files in the <code>worker/</code> folder, you need to redeploy it:</p>
+  <pre>cd worker                        # Navigate into the worker folder
+npx wrangler deploy              # Upload the updated code to Cloudflare</pre>
+  <p>This takes about 10 seconds. The Worker updates instantly &mdash; no waiting for a rebuild.</p>
+
+  <div class="card info">
+    <p><span class="label info">WHEN DO YOU NEED TO REDEPLOY THE WORKER?</span> Only when files inside the <code>worker/</code> folder change. If you only changed <code>docs/index.html</code> (the website), you do NOT need to touch the worker &mdash; just <code>git push</code> is enough.</p>
+  </div>
 
   <h3>Rolling back to a previous version</h3>
   <p>Every change is tagged in git with a version number. You can roll back to any version at any time.</p>
@@ -273,20 +292,25 @@ npx wrangler deploy</pre>
   </div>
 
   <h3>Step 1: See all available versions</h3>
+  <p>This lists every tagged version. Think of tags as bookmarks on specific points in the project&rsquo;s history.</p>
   <pre>git tag -l</pre>
 
   <h3>Step 2: See what changed between versions</h3>
+  <p>This shows a short summary of every change made between two versions, so you know what you&rsquo;d be undoing.</p>
   <pre>git log v2.0..v2.1 --oneline</pre>
 
-  <h3>Step 3: Safe rollback (creates a new commit, preserves history)</h3>
+  <h3>Step 3: Roll back (safe — keeps your full history)</h3>
+  <p>This undoes all changes made after v2.0, but keeps the full history intact. You can always roll forward again later if you change your mind. Copy and paste these three commands one after another:</p>
   <pre>git revert v2.0..HEAD --no-commit
 git commit -m "Revert to v2.0"
 git push</pre>
-  <p>This undoes everything after v2.0 but keeps the full git history. You can always roll forward again later.</p>
+  <p><strong>What happens:</strong> The live site will update in ~2 minutes to look exactly like it did at version 2.0. All changes made since then are removed from the live site, but the code is still in the git history if you ever need it back.</p>
 
-  <h3>Step 4: Redeploy the worker (if the version change affects it)</h3>
+  <h3>Step 4: Redeploy the worker (only if the version change affects the worker)</h3>
+  <p>If the version you&rsquo;re rolling back from changed any worker files (check the CHANGELOG), you need to redeploy:</p>
   <pre>cd worker
 npx wrangler deploy</pre>
+  <p>If you&rsquo;re unsure whether the worker needs redeploying, it&rsquo;s safe to do it anyway &mdash; it only takes 10 seconds and won&rsquo;t break anything.</p>
 
   <div class="card warn">
     <p><span class="label warn">KNOCK-ON EFFECTS</span> Rolling back versions can break things if you don't also roll back the worker. Check <code>CHANGELOG.md</code> for the full list of what each version requires.</p>
