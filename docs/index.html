@@ -1345,15 +1345,15 @@ function researchMatchPreview(team) {
           }
 
           // Upcoming fixtures for both
-          context += team.toUpperCase() + ' UPCOMING FIXTURES:\n';
-          teamData.fixtures.slice(0, 4).forEach(function(f) {
-            context += f.date + ': ' + f.homeTeam + ' vs ' + f.awayTeam + '\n';
+          context += team.toUpperCase() + ' UPCOMING FIXTURES (use for run-in analysis — are these easy or hard games?):\n';
+          teamData.fixtures.slice(0, 6).forEach(function(f) {
+            context += f.date + ': ' + f.homeTeam + ' vs ' + f.awayTeam + ' (' + (f.competition || '') + ')\n';
           });
           context += '\n' + opponent.toUpperCase() + ' UPCOMING FIXTURES:\n';
-          opponentData.fixtures.slice(0, 4).forEach(function(f) {
-            context += f.date + ': ' + f.homeTeam + ' vs ' + f.awayTeam + '\n';
+          opponentData.fixtures.slice(0, 6).forEach(function(f) {
+            context += f.date + ': ' + f.homeTeam + ' vs ' + f.awayTeam + ' (' + (f.competition || '') + ')\n';
           });
-          context += '\n';
+          context += '\nWRITER NOTE: Use the upcoming fixtures to analyse the run-in for both teams. Are promotion-chasers playing each other? Are relegation-threatened teams facing easy opponents? This context makes the preview compelling.\n\n';
 
           // Reference data (injuries, lineups, TV)
           if (refData) {
@@ -1362,19 +1362,29 @@ function researchMatchPreview(team) {
 
           // Step 4: One focused Perplexity call for data BBC doesn't provide
           addLog('[Research] Step 4: Enriching with H2H, managers, table positions via Perplexity...');
-          var enrichPrompt = 'TODAY IS ' + TODAY_STR + '. For this CONFIRMED match: ' + fixture.homeTeam + ' vs ' + fixture.awayTeam + ' on ' + fixture.date + '.\n\n'
-            + 'I already have fixture, results, and match reports. I ONLY need these specific missing data points:\n\n'
-            + '1. LEAGUE TABLE POSITIONS — ' + team + ': Position, points, GD. ' + opponent + ': Position, points, GD\n'
-            + '2. HEAD-TO-HEAD — Last 5 meetings between ' + team + ' and ' + opponent + ': date, score, venue for each\n'
-            + '3. MANAGERS — ' + team + ' manager: [full name]. ' + opponent + ' manager: [full name]\n'
-            + '4. TOP SCORERS — Leading scorer for each team this season with goals tally\n\n'
-            + 'Return ONLY facts you can verify. Write "NOT FOUND" for anything you cannot confirm. Do NOT invent.';
+          var enrichPrompt = 'TODAY IS ' + TODAY_STR + '. Match: ' + fixture.homeTeam + ' vs ' + fixture.awayTeam + ' on ' + fixture.date + ' (' + (fixture.competition || 'League Two') + ').\n\n'
+            + 'I need these SPECIFIC data points. Each is CRITICAL for the article — do not skip any:\n\n'
+            + '1. LEAGUE TABLE — THIS IS THE MOST IMPORTANT ITEM:\n'
+            + '   ' + team + ': Exact position (e.g. 10th), points total, games played, goal difference\n'
+            + '   ' + opponent + ': Exact position, points total, games played, goal difference\n'
+            + '   How many games remain in the season?\n'
+            + '   What are the promotion spots (auto + play-offs) and relegation spots?\n'
+            + '   Points gap: How far is each team from promotion play-offs? From relegation?\n\n'
+            + '2. WHAT IS AT STAKE for each team in this match?\n'
+            + '   Is ' + team + ' chasing promotion, play-offs, mid-table, or fighting relegation?\n'
+            + '   Is ' + opponent + ' chasing promotion, play-offs, mid-table, or fighting relegation?\n'
+            + '   Be specific: "X points from the play-off places with Y games left"\n\n'
+            + '3. HEAD-TO-HEAD — Last 5 meetings: date, score, venue for each\n\n'
+            + '4. MANAGERS — ' + team + ' manager: [full name]. ' + opponent + ' manager: [full name]\n\n'
+            + '5. TOP SCORERS — Leading goalscorer for each team with goals + assists tally\n\n'
+            + '6. KEY PLAYER WATCH — One standout player from each team: name, position, form, key stat\n\n'
+            + 'Return ONLY verified facts. "NOT FOUND" for anything unconfirmed.';
 
           return delay(1500).then(function() {
             return callModel(
               RESEARCH_MODEL,
-              'You are a sports fact-checker. Today is ' + TODAY_STR + '. Return ONLY verified facts for the specific data requested. Never invent data.',
-              enrichPrompt, 800
+              'You are a sports data researcher. Today is ' + TODAY_STR + '. The league table position and what is at stake are the MOST IMPORTANT items — prioritise these above all else. Return ONLY verified current facts. Never invent.',
+              enrichPrompt, 1200
             ).catch(function() { return ''; });
           }).then(function(enrichment) {
             if (enrichment) {
@@ -2419,7 +2429,12 @@ function buildPrompt(spec, ctx, articleLength, extraContext) {
       + '  "will aim to leverage", "the outcome often hinges on", "tactical discipline being key",\n'
       + '  "a closely fought encounter", "will be looking to impose their style",\n'
       + '  "according to recent reports", "data suggests"\n'
-      + '- A pullquote MUST be a REAL quote from a real person found in the source. If no real quotes exist, use a strong stat as the pullquote (e.g. "W4 D0 L1 — ' + (spec.team || 'Team') + '\'s record in the last 5 home matches") with the source as attribution.\n\n';
+      + '- A pullquote MUST be a REAL quote from a real person found in the source. If no real quotes exist, use a strong stat as the pullquote (e.g. "W4 D0 L1 — ' + (spec.team || 'Team') + '\'s record in the last 5 home matches") with the source as attribution.\n'
+      + '- STAT BOX CONSISTENCY: Every number in the stats strip MUST match the article text. If you say "clean sheet" in the article, the stat box must NOT say "0 clean sheets". Cross-check every stat card against the article body.\n'
+      + '- LEAGUE POSITION IS MANDATORY: If the research provides league table positions, they MUST appear in the opening paragraphs. State the exact position, points, and what the club is chasing (promotion, play-offs, survival). This is what makes a preview relevant.\n'
+      + '- RUN-IN ANALYSIS: If upcoming fixtures are provided, analyse them. Are the remaining opponents strong or weak? Is the schedule congested? This adds depth that casual fans will not find elsewhere.\n'
+      + '- NAME SPECIFIC PLAYERS: Do not write "the backline struggled". Name the player who struggled. If the match report mentions a specific player, reference them by name with what they did.\n'
+      + '- KEEP SENTENCES PUNCHY: Break long sentences. "For fans who endured Friday at Blundell Park, this fixture is a mercy" hits harder than a 40-word sentence saying the same thing.\n\n';
   }
 
   p += '\nREQUIRED STRUCTURE (follow this order):\n\n'
