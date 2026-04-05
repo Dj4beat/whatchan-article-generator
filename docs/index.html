@@ -1549,7 +1549,7 @@ function writeMatchPreviewSections(researchContext, spec) {
       + '   Q2: What time is kick-off? A: 15:00 BST, Monday 6 April 2026.\n'
       + '   Q3: What were the last results? A: Use the data.\n'
       + '   Q4: What are the league positions? A: Use the data.\n'
-      + '3. FAQ schema: <script type="application/ld+json">...</script>\n'
+      + '3. FAQ schema: <scr' + 'ipt type="application/ld+json">...</scr' + 'ipt>\n'
       + '4. <p class="wc-sources"><strong>Sources:</strong> BBC Sport, live-footballontv.com, EFL.</p>';
 
     return delay(2000).then(function() { return callLLM(baseSystem, s4, tokenLimit); });
