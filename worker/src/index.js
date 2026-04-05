@@ -1,4 +1,4 @@
-// Cloudflare Worker — proxies OpenRouter API + RSS feeds + URL extraction
+// Cloudflare Worker — proxies OpenRouter API + RSS feeds + URL extraction + match stats
 // API key stored as Cloudflare secret, never exposed to browser
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
@@ -43,7 +43,7 @@ const ALLOWED_ORIGINS = [
   'https://dj4beat.github.io',
   'http://localhost:8000',
   'http://127.0.0.1:8000',
-  'null',                               // local file:// origin
+  'null',
 ];
 
 function corsHeaders(origin) {
@@ -87,7 +87,6 @@ function parseRssXml(xml, source) {
 
 // ── Extract article text from a URL ──
 function extractArticleText(html) {
-  // Remove scripts, styles, nav, header, footer, aside
   let text = html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -95,110 +94,146 @@ function extractArticleText(html) {
     .replace(/<header[\s\S]*?<\/header>/gi, '')
     .replace(/<footer[\s\S]*?<\/footer>/gi, '')
     .replace(/<aside[\s\S]*?<\/aside>/gi, '');
-
-  // Try to find article body
   const articleMatch = text.match(/<article[\s\S]*?<\/article>/i);
   if (articleMatch) text = articleMatch[0];
-
-  // Strip remaining tags, decode entities, clean whitespace
   text = text
     .replace(/<[^>]+>/g, ' ')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ').replace(/&#039;/g, "'").replace(/&quot;/g, '"')
     .replace(/\s{3,}/g, '\n\n')
     .trim();
-
-  return text.slice(0, 8000); // cap at 8k chars
+  return text.slice(0, 8000);
 }
 
-// ── BBC Sport match stats parser — extracts from __INITIAL_DATA__ JSON blob ──
+// ── BBC Sport match stats parser ──
+// Extracts structured stats from the __INITIAL_DATA__ JSON embedded in BBC Sport pages.
+// Strategy: find the sportDataEvent block (the main match), then extract home/away stats
+// by searching near each team's fullName for the "stats":{...} block.
 function parseBbcMatchStats(html) {
   const m = html.match(/window\.__INITIAL_DATA__="([\s\S]*?)";/);
-  if (!m) throw new Error('No __INITIAL_DATA__ found on this BBC page');
-  const raw = m[1];
+  if (!m) throw new Error('No __INITIAL_DATA__ found — is this a BBC Sport page?');
 
-  // Find homeTeam and awayTeam blocks with stats
-  const homeMatch = raw.match(/homeTeam.*?name.*?fullName.*?\\?":\s*\\?"([^"\\]+)/);
-  const awayMatch = raw.match(/awayTeam.*?name.*?fullName.*?\\?":\s*\\?"([^"\\]+)/);
-  const homeTeam = homeMatch ? homeMatch[1] : 'Home';
-  const awayTeam = awayMatch ? awayMatch[1] : 'Away';
+  // Unescape the double-escaped JSON string
+  const raw = m[1].replace(/\\\\"/g, '"').replace(/\\"/g, '"');
 
-  // Find score
-  const scoreMatch = raw.match(/homeScore.*?\\?":\s*(\d+).*?awayScore.*?\\?":\s*(\d+)/);
-  const score = scoreMatch ? scoreMatch[1] + '-' + scoreMatch[2] : 'vs';
+  // Find the sportDataEvent which contains the main match for this page
+  const eventIdx = raw.indexOf('"sportDataEvent"');
+  if (eventIdx < 0) throw new Error('No sportDataEvent — this may not be a match page');
 
-  // Find competition
-  const compMatch = raw.match(/tournamentName.*?\\?":\s*\\?"([^"\\]+)/);
-  const competition = compMatch ? compMatch[1] : '';
+  // Extract a large block after sportDataEvent to work with
+  const eventBlock = raw.slice(eventIdx, eventIdx + 30000);
 
-  // Extract team-level stats using the homeTeam stats block
-  function extractTeamStats(teamLabel) {
-    // Find the stats block for this team alignment
-    const pattern = new RegExp('"alignment":"' + teamLabel + '".*?"stats":\\{(.*?)\\},"alignment"', 's');
-    const altPattern = new RegExp('"alignment":"' + teamLabel + '".*?"stats":\\{(.*?)\\},', 's');
-    // Simpler: just find possessionPercentage after the team alignment
-    const alignIdx = raw.indexOf('"alignment":"' + teamLabel + '"');
-    if (alignIdx < 0) return {};
-    // Get 2000 chars after this point — covers all stats
-    const chunk = raw.slice(alignIdx, alignIdx + 2000);
-    const stats = {};
-    const statPatterns = [
-      ['possessionPercentage', 'Possession', '%'],
-      ['shotsTotal', 'Shots', ''],
-      ['shotsOnTarget', 'Shots on Target', ''],
-      ['shotsSaved', 'Saves', ''],
-      ['foulsCommitted', 'Fouls', ''],
-      ['cornersWon', 'Corners', ''],
-      ['totalOffside', 'Offsides', ''],
-    ];
-    statPatterns.forEach(([key, label, suffix]) => {
-      const re = new RegExp('"' + key + '":\\{[^}]*"total":\\s*([\\d.]+)');
-      const sm = chunk.match(re);
-      if (sm) stats[label] = parseFloat(sm[1]) + (suffix || '');
-    });
-    // Also try to find xG
-    const xgMatch = chunk.match(/"expectedGoals".*?"total":\s*([\d.]+)/);
-    if (xgMatch) stats['Expected Goals (xG)'] = xgMatch[1];
-    // Passes and pass accuracy from distribution block
-    const passMatch = chunk.match(/"totalPass".*?"total":\s*(\d+)/);
-    if (passMatch) stats['Passes'] = passMatch[1];
-    const passAccMatch = chunk.match(/"accuratePassPercentage".*?"total":\s*([\d.]+)/);
-    if (passAccMatch) stats['Pass Accuracy'] = parseFloat(passAccMatch[1]).toFixed(1) + '%';
-    // Tackles
-    const tackleMatch = chunk.match(/"totalTackle".*?"total":\s*(\d+)/);
-    if (tackleMatch) stats['Tackles'] = tackleMatch[1];
-    // Yellow/red cards
-    const yellowMatch = chunk.match(/"yellowCards".*?"total":\s*(\d+)/);
-    if (yellowMatch) stats['Yellow Cards'] = yellowMatch[1];
-    const redMatch = chunk.match(/"redCards".*?"total":\s*(\d+)/);
-    if (redMatch) stats['Red Cards'] = redMatch[1];
-    return stats;
+  // Get team names from the stats blocks (most reliable — right next to the stats)
+  const homeStatsMarker = raw.indexOf('"alignment":"home","stats":{');
+  const awayStatsMarker = raw.indexOf('"alignment":"away","stats":{');
+  let homeTeam = 'Home', awayTeam = 'Away';
+
+  if (homeStatsMarker > 0) {
+    const before = raw.slice(Math.max(0, homeStatsMarker - 300), homeStatsMarker);
+    const nameMatch = before.match(/"fullName":"([^"]+)"/);
+    if (nameMatch) homeTeam = nameMatch[1];
+  }
+  if (awayStatsMarker > 0) {
+    const before = raw.slice(Math.max(0, awayStatsMarker - 300), awayStatsMarker);
+    const nameMatch = before.match(/"fullName":"([^"]+)"/);
+    if (nameMatch) awayTeam = nameMatch[1];
   }
 
-  const homeStats = extractTeamStats('home');
-  const awayStats = extractTeamStats('away');
+  // Get score — most reliable pattern is the accessible text: "Team A 1 , Team B 2 at Full time"
+  let score = 'vs';
+  const scoreAccessible = raw.match(/(\d+)\s*,\s*[^"]*?\s(\d+)\s*at Full time/);
+  if (scoreAccessible) {
+    score = scoreAccessible[1] + '-' + scoreAccessible[2];
+  } else {
+    // Fallback: fulltime scores near team names
+    const homeFt = raw.match(new RegExp('"fullName":"' + homeTeam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"[^}]*?"fulltime":"(\\d+)"'));
+    const awayFt = raw.match(new RegExp('"fullName":"' + awayTeam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"[^}]*?"fulltime":"(\\d+)"'));
+    if (homeFt && awayFt) score = homeFt[1] + '-' + awayFt[1];
+  }
 
-  // Merge into stats array
+  // Competition
+  const compMatch = eventBlock.match(/"tournamentName":"([^"]+)"/);
+  const competition = compMatch ? compMatch[1] : '';
+
+  // Extract stats by finding "alignment":"home/away","stats":{ pattern directly
+  // This is more reliable than searching by team name because the page may have
+  // multiple matches — but only one block has alignment+stats together.
+  function extractStats(alignment) {
+    const marker = '"alignment":"' + alignment + '","stats":{';
+    const markerIdx = raw.indexOf(marker);
+    if (markerIdx < 0) return {};
+
+    // The stats block starts right after "stats":{
+    const statsStart = markerIdx + marker.length - 1; // include the opening {
+    const statsChunk = raw.slice(statsStart, statsStart + 2000);
+    const result = {};
+
+    // Simple pattern: "keyName":{"total":NUMBER}
+    function grab(key, label, isPct) {
+      const re = new RegExp('"' + key + '":\\{"total":(\\d+\\.?\\d*)\\}');
+      const sm = statsChunk.match(re);
+      if (sm) {
+        result[label] = isPct ? (parseFloat(sm[1]).toFixed(1) + '%') : String(Math.round(parseFloat(sm[1])));
+      }
+    }
+
+    grab('possessionPercentage', 'Possession', true);
+    grab('shotsTotal', 'Shots', false);
+    grab('shotsOnTarget', 'Shots on Target', false);
+    grab('shotsSaved', 'Saves', false);
+    grab('foulsCommitted', 'Fouls', false);
+    grab('cornersWon', 'Corners', false);
+
+    // Offsides — inside "attack" sub-block
+    const offMatch = statsChunk.match(/"totalOffside":\{"total":(\d+)\}/);
+    if (offMatch) result['Offsides'] = offMatch[1];
+
+    // Distribution stats — may be in a wider window
+    const widerChunk = raw.slice(markerIdx, markerIdx + 3000);
+    const passMatch = widerChunk.match(/"totalPass":\{"total":(\d+)\}/);
+    if (passMatch) result['Passes'] = passMatch[1];
+    const passAccMatch = widerChunk.match(/"accuratePassPercentage":\{"total":([\d.]+)\}/);
+    if (passAccMatch) result['Pass Accuracy'] = parseFloat(passAccMatch[1]).toFixed(1) + '%';
+
+    // Defence stats
+    const tackleMatch = widerChunk.match(/"totalTackle":\{"total":(\d+)\}/);
+    if (tackleMatch) result['Tackles'] = tackleMatch[1];
+
+    // xG — search in a wider window from the marker position
+    const xgWindow = raw.slice(markerIdx, markerIdx + 5000);
+    const xgMatch = xgWindow.match(/"expectedGoals"[\s\S]{0,30}?"total":([\d.]+)/);
+    if (xgMatch) result['Expected Goals (xG)'] = parseFloat(xgMatch[1]).toFixed(2);
+
+    return result;
+  }
+
+  const homeStats = extractStats('home');
+  const awayStats = extractStats('away');
+
+  // Merge into ordered stats array
   const allLabels = new Set([...Object.keys(homeStats), ...Object.keys(awayStats)]);
   const stats = [];
-  // Preferred order
-  const order = ['Possession', 'Shots', 'Shots on Target', 'Expected Goals (xG)', 'Corners', 'Fouls', 'Yellow Cards', 'Red Cards', 'Passes', 'Pass Accuracy', 'Tackles', 'Saves', 'Offsides'];
-  order.forEach(label => {
+  const order = ['Possession', 'Shots', 'Shots on Target', 'Expected Goals (xG)', 'Corners', 'Fouls', 'Passes', 'Pass Accuracy', 'Tackles', 'Saves', 'Offsides'];
+
+  for (const label of order) {
     if (allLabels.has(label)) {
-      const hv = homeStats[label];
-      const av = awayStats[label];
-      if (hv !== undefined || av !== undefined) {
-        stats.push({ label, home: String(hv !== undefined ? hv : '0'), away: String(av !== undefined ? av : '0') });
-      }
+      stats.push({
+        label,
+        home: String(homeStats[label] !== undefined ? homeStats[label] : '0'),
+        away: String(awayStats[label] !== undefined ? awayStats[label] : '0'),
+      });
       allLabels.delete(label);
     }
-  });
-  // Any remaining stats not in preferred order
-  allLabels.forEach(label => {
-    stats.push({ label, home: String(homeStats[label] || '0'), away: String(awayStats[label] || '0') });
-  });
+  }
+  for (const label of allLabels) {
+    stats.push({
+      label,
+      home: String(homeStats[label] || '0'),
+      away: String(awayStats[label] || '0'),
+    });
+  }
 
-  if (stats.length === 0) throw new Error('No stats could be extracted from the BBC page data');
+  if (stats.length === 0) throw new Error('Stats block found but individual stats could not be parsed');
 
   return { homeTeam, awayTeam, score, competition, stats };
 }
@@ -214,7 +249,7 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    // ── Token check — reject requests without valid X-WC-Token ──
+    // ── Token check ──
     const token = request.headers.get('X-WC-Token') || '';
     if (env.WC_SECRET && token !== env.WC_SECRET) {
       return jsonResponse({ error: 'Unauthorised' }, 401, cors);
@@ -223,7 +258,6 @@ export default {
     // ── Route: POST /api/messages → OpenRouter ──
     if (url.pathname === '/api/messages' && request.method === 'POST') {
       const body = await request.text();
-
       const orResponse = await fetch(OPENROUTER_API, {
         method: 'POST',
         headers: {
@@ -234,84 +268,71 @@ export default {
         },
         body,
       });
-
       const responseHeaders = new Headers(cors);
       responseHeaders.set('Content-Type', 'application/json');
-
-      return new Response(orResponse.body, {
-        status: orResponse.status,
-        headers: responseHeaders,
-      });
+      return new Response(orResponse.body, { status: orResponse.status, headers: responseHeaders });
     }
 
-    // ── Route: GET /api/rss?sport=football&source=bbc|all ──
+    // ── Route: GET /api/rss ──
     if (url.pathname === '/api/rss' && request.method === 'GET') {
       const sport = url.searchParams.get('sport') || 'football';
       const source = url.searchParams.get('source') || 'all';
       const sportFeeds = RSS_FEEDS[sport] || RSS_FEEDS.football;
       const sources = source === 'all' ? Object.keys(sportFeeds) : [source];
-
       const results = await Promise.allSettled(
         sources.filter(s => sportFeeds[s]).map(async (s) => {
           const res = await fetch(sportFeeds[s], {
             headers: { 'User-Agent': 'WhatChan-ArticleBot/1.0' },
-            cf: { cacheTtl: 300 }, // cache 5 min at edge
+            cf: { cacheTtl: 300 },
           });
           if (!res.ok) return [];
           const xml = await res.text();
           return parseRssXml(xml, s);
         })
       );
-
       const items = results
         .filter(r => r.status === 'fulfilled')
         .flatMap(r => r.value)
         .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
         .slice(0, 60);
-
       return jsonResponse({ items, fetched: new Date().toISOString() }, 200, cors);
     }
 
-    // ── Route: POST /api/fetch-article → extract text from URL ──
+    // ── Route: POST /api/fetch-article ──
     if (url.pathname === '/api/fetch-article' && request.method === 'POST') {
       try {
         const { articleUrl } = await request.json();
         if (!articleUrl) return jsonResponse({ error: 'Missing articleUrl' }, 400, cors);
-
         const res = await fetch(articleUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WhatChan-Bot/1.0)' },
           redirect: 'follow',
         });
         if (!res.ok) return jsonResponse({ error: 'Failed to fetch: ' + res.status }, res.status, cors);
-
         const html = await res.text();
         const text = extractArticleText(html);
         const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
         const title = titleMatch
           ? titleMatch[1].replace(/&amp;/g, '&').replace(/&#039;/g, "'").replace(/&quot;/g, '"').trim()
           : '';
-
         return jsonResponse({ title, text, url: articleUrl }, 200, cors);
       } catch (e) {
         return jsonResponse({ error: e.message }, 500, cors);
       }
     }
 
-    // ── Route: POST /api/match-stats → extract structured stats from BBC Sport URL ──
+    // ── Route: POST /api/match-stats → BBC Sport stats extraction ──
     if (url.pathname === '/api/match-stats' && request.method === 'POST') {
       try {
         const { statsUrl } = await request.json();
         if (!statsUrl) return jsonResponse({ error: 'Missing statsUrl' }, 400, cors);
         if (!statsUrl.includes('bbc.com/sport') && !statsUrl.includes('bbc.co.uk/sport')) {
-          return jsonResponse({ error: 'Only BBC Sport URLs are supported for stats extraction' }, 400, cors);
+          return jsonResponse({ error: 'Only BBC Sport URLs are supported' }, 400, cors);
         }
-
         const res = await fetch(statsUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
           redirect: 'follow',
         });
         if (!res.ok) return jsonResponse({ error: 'Failed to fetch BBC page: ' + res.status }, res.status, cors);
-
         const html = await res.text();
         const data = parseBbcMatchStats(html);
         return jsonResponse(data, 200, cors);
@@ -320,7 +341,7 @@ export default {
       }
     }
 
-    // ── Route: GET /api/feedback → read all feedback entries from KV ──
+    // ── Route: GET /api/feedback ──
     if (url.pathname === '/api/feedback' && request.method === 'GET') {
       try {
         const raw = await env.FEEDBACK.get('entries');
@@ -331,34 +352,27 @@ export default {
       }
     }
 
-    // ── Route: POST /api/feedback → add a feedback entry to KV ──
+    // ── Route: POST /api/feedback ──
     if (url.pathname === '/api/feedback' && request.method === 'POST') {
       try {
         const { entry } = await request.json();
         if (!entry || !entry.feedback) return jsonResponse({ error: 'Missing entry.feedback' }, 400, cors);
-
-        // Read existing entries
         const raw = await env.FEEDBACK.get('entries');
         const entries = raw ? JSON.parse(raw) : [];
-
-        // Deduplicate: skip if same typeId + first 80 chars of feedback already exists
         const prefix = (entry.feedback || '').slice(0, 80);
         const isDupe = entries.some(e => e.typeId === entry.typeId && (e.feedback || '').slice(0, 80) === prefix);
-
         if (!isDupe) {
-          // Add unique ID if not present
           if (!entry.id) entry.id = 'fb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
           entries.push(entry);
           await env.FEEDBACK.put('entries', JSON.stringify(entries));
         }
-
         return jsonResponse({ entries, count: entries.length, added: !isDupe }, 200, cors);
       } catch (e) {
         return jsonResponse({ error: e.message }, 500, cors);
       }
     }
 
-    // ── Route: DELETE /api/feedback → clear all feedback entries (admin) ──
+    // ── Route: DELETE /api/feedback ──
     if (url.pathname === '/api/feedback' && request.method === 'DELETE') {
       try {
         await env.FEEDBACK.delete('entries');
