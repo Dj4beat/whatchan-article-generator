@@ -1459,140 +1459,105 @@ function researchMatchPreview(team) {
 // ═══════════════════════════════════════════════════════════════
 function writeMatchPreviewSections(researchContext, spec) {
   var sport = SPORTS[ACTIVE_SPORT];
-  var baseRules = 'You are ' + AUTHOR.name + ', a football journalist for WhatChan (' + sport.siteUrl + '). '
-    + 'British English. Pure HTML output (no markdown, no backticks). Punchy sentences. '
-    + 'Use ONLY the data provided below — NEVER use training knowledge for any fact. '
-    + 'If a section asks you to name players and you have player names, you MUST name them. '
-    + 'Output ONLY the HTML for this section — no wrappers, no explanations.';
-
-  // Parse research to extract sections for focused prompts
   var rc = researchContext || '';
-
-  // Helper: extract a block from research context between markers
-  function extractBlock(startMarker, endMarker) {
-    var s = rc.indexOf(startMarker);
-    if (s < 0) return '';
-    var e = endMarker ? rc.indexOf(endMarker, s + startMarker.length) : rc.length;
-    if (e < 0) e = rc.length;
-    return rc.slice(s, e).trim();
-  }
-
-  var fixtureBlock = extractBlock('CONFIRMED NEXT FIXTURE:', '\n\n');
-  var teamResultsBlock = extractBlock(spec.team.toUpperCase() + ' RECENT RESULTS', '\n\n');
-  var teamReportBlock = extractBlock(spec.team.toUpperCase() + ' LAST MATCH REPORT', '\n\n');
-  var oppResultsBlock = extractBlock('RECENT RESULTS', teamReportBlock ? '' : '\n\n'); // second occurrence
-  var oppReportBlock = '';
-  // Find opponent report (it's after the team report)
-  var oppReportMarker = rc.indexOf('LAST MATCH REPORT', rc.indexOf('LAST MATCH REPORT') + 10);
-  if (oppReportMarker > 0) oppReportBlock = rc.slice(oppReportMarker, rc.indexOf('\n\n===', oppReportMarker)).trim();
-  var fixturesBlock = extractBlock('UPCOMING FIXTURES', 'WRITER NOTE');
-  var tvBlock = extractBlock('TV BROADCAST DATA', '\n\n===');
-  var tvNote = extractBlock('TV NOTE:', '\n\n');
-  var enrichBlock = extractBlock('PERPLEXITY ENRICHMENT', '\n\n===');
-  if (!enrichBlock) enrichBlock = extractBlock('PERPLEXITY ENRICHMENT', '');
+  var teamName = spec.team || '';
+  // Pass the FULL research context to every section — but give each a FOCUSED task
+  var baseSystem = 'You are ' + AUTHOR.name + ', football journalist for WhatChan (' + sport.siteUrl + '). '
+    + 'British English. Pure HTML only — no markdown, no backticks, no code fences. Punchy sentences. '
+    + 'Use ONLY facts from the RESEARCH DATA below. NEVER use training knowledge for any current fact. '
+    + 'When the research mentions a player by name, you MUST use that name in your writing. '
+    + 'Output ONLY the HTML for the requested section.';
 
   var sections = [];
-  var tokenLimit = Math.round(getTokenLimit() / 5); // ~20% per section
+  var tokenLimit = Math.round(getTokenLimit() / 4);
 
-  // ── SECTION 1: Editor's Note + Opening (uses: fixture, match reports, league positions) ──
-  addLog('[Writer] Section 1/5: Opening — fixture, stakes, match report context...');
-  var s1Prompt = 'Write the OPENING of a match preview article.\n\n'
-    + 'FIXTURE:\n' + fixtureBlock + '\n\n'
-    + (enrichBlock ? 'LEAGUE POSITIONS AND STAKES:\n' + enrichBlock + '\n\n' : '')
-    + (teamReportBlock ? 'TEAM MATCH REPORT (read this — use specific player names and events):\n' + teamReportBlock.slice(0, 1500) + '\n\n' : '')
-    + (oppReportBlock ? 'OPPONENT MATCH REPORT (read this — use specific details):\n' + oppReportBlock.slice(0, 1500) + '\n\n' : '')
-    + 'REQUIRED OUTPUT:\n'
-    + '1. An Editor\'s Note: <div class="wc-editors-note"><div class="wc-editors-note-label">Editor\'s Note</div><p>2-3 sentences on the key story.</p></div>\n'
-    + '2. A compelling H1 headline with the team names\n'
-    + '3. "By ' + AUTHOR.name + ', WhatChan Chief Football Analyst"\n'
-    + '4. 2-3 opening paragraphs that MUST include:\n'
-    + '   - Both teams\' exact league positions (from the data above)\n'
-    + '   - What each team is playing for (promotion, play-offs, survival)\n'
-    + '   - SPECIFIC references to both teams\' last match — name the ACTUAL players who scored, assisted, or had notable performances from the match reports\n'
-    + '   - The contrast between the two teams\' recent fortunes\n'
-    + '5. A stats strip with 4 specific numbers from the data: <div class="wc-stats-strip"><div class="wc-stat-card"><div class="wc-stat-num">NUMBER</div><div class="wc-stat-label">LABEL</div></div></div>\n'
-    + '   CRITICAL: Every number in the stats strip must MATCH the article text. Cross-check before outputting.';
+  // ── SECTION 1: Editor's Note + Opening + Stats ──
+  addLog('[Writer] Section 1/4: Opening — fixture, players, stakes...');
+  var s1 = 'Write the OPENING of a match preview.\n\n'
+    + '=== FULL RESEARCH DATA ===\n' + rc.slice(0, 6000) + '\n=== END ===\n\n'
+    + 'YOUR TASK — write ONLY these elements:\n'
+    + '1. Editor\'s Note: <div class="wc-editors-note"><div class="wc-editors-note-label">Editor\'s Note</div><p>2-3 sentence summary.</p></div>\n'
+    + '2. H1 headline with both team names\n'
+    + '3. Byline: "By ' + AUTHOR.name + ', WhatChan Chief Football Analyst"\n'
+    + '4. 3 opening paragraphs that MUST include ALL of these:\n'
+    + '   a) Both teams\' EXACT league positions and points (from the Perplexity data)\n'
+    + '   b) What each team is playing for (promotion, play-offs, survival, mid-table)\n'
+    + '   c) NAMES of players who scored/performed in the last matches — read the BBC match reports in the data and extract SPECIFIC player names and what they did\n'
+    + '   d) The contrast between both teams\' Good Friday results\n'
+    + '5. Stats strip: <div class="wc-stats-strip"> with 4 stat cards using REAL numbers from the data\n\n'
+    + 'CRITICAL: If the match reports mention "Tobias Brennan curled in a shot" — write "Brennan" in your text. If "Harry McKirdy scored a double" — write "McKirdy" in your text. USE THE NAMES.';
 
-  var p1 = delay(500).then(function() {
-    return callLLM(baseRules, s1Prompt, tokenLimit);
+  var p1 = delay(500).then(function() { return callLLM(baseSystem, s1, tokenLimit); });
+
+  // ── SECTION 2: Tactical + Players + How to Watch ──
+  var p2 = p1.then(function(html1) {
+    sections.push(cleanMarkdown(html1));
+    addLog('[Writer] Section 2/4: Tactical analysis + players + How to Watch...');
+    var s2 = 'Write the MIDDLE sections of a match preview.\n\n'
+      + '=== FULL RESEARCH DATA ===\n' + rc.slice(0, 6000) + '\n=== END ===\n\n'
+      + 'YOUR TASK — write these h2 sections:\n\n'
+      + 'SECTION A: h2 "Key Players and Tactical Battle"\n'
+      + '- Read the BBC match reports in the data. Find EVERY player mentioned by name.\n'
+      + '- For EACH player, state what they did: who scored, who assisted, who made saves, who got cards, who made errors.\n'
+      + '- You MUST name at least 4 different players across both teams.\n'
+      + '- Identify 2 specific player-vs-player matchups for this fixture.\n'
+      + '- Include a pullquote: <div class="wc-pullquote">"A strong stat from the data"<cite>BBC Sport / WhatChan Analysis</cite></div>\n\n'
+      + 'SECTION B: h2 "How to Watch Crawley Town vs Grimsby Town"\n'
+      + '- THIS SECTION IS MANDATORY. WhatChan is a TV and streaming guide — this is our core content.\n'
+      + '- TV Channel: Sky Sports+ (ALL League Two matches are shown on Sky Sports+)\n'
+      + '- Kick-off: 15:00 BST, Monday 6th April 2026\n'
+      + '- UK streaming: Sky Go app (for Sky subscribers), NOW TV (day pass or monthly)\n'
+      + '- Overseas: iFollow service from each club\n'
+      + '- If the research data mentions any other broadcast info, include it.\n'
+      + '- DO NOT say "broadcast details not confirmed" — they ARE confirmed: Sky Sports+.\n';
+
+    return delay(2000).then(function() { return callLLM(baseSystem, s2, tokenLimit); });
   });
 
-  // ── SECTION 2: Tactical analysis + player spotlight (uses: match reports for player names) ──
-  var s2Prompt = 'Write a TACTICAL ANALYSIS section for a match preview.\n\n'
-    + 'FIXTURE:\n' + fixtureBlock + '\n\n'
-    + (teamReportBlock ? spec.team.toUpperCase() + ' LAST MATCH REPORT — extract player names and tactical details:\n' + teamReportBlock.slice(0, 2000) + '\n\n' : '')
-    + (oppReportBlock ? 'OPPONENT LAST MATCH REPORT — extract player names and tactical details:\n' + oppReportBlock.slice(0, 2000) + '\n\n' : '')
-    + (enrichBlock ? 'ADDITIONAL CONTEXT:\n' + enrichBlock + '\n\n' : '')
-    + 'REQUIRED OUTPUT:\n'
-    + '1. An h2 "Key Battles and Tactical Shape" section\n'
-    + '2. You MUST name at least 3 SPECIFIC PLAYERS from the match reports above. Not "the backline" — actual names like "Tobias Brennan" or "Harry McKirdy".\n'
-    + '3. For each player mentioned, reference WHAT THEY DID (scored, assisted, created chances, made errors) from the match report text.\n'
-    + '4. Identify 2 specific player-vs-player matchups for this fixture.\n'
-    + '5. A pullquote using a REAL stat or quote from the data: <div class="wc-pullquote">"Quote or stat"<cite>Source</cite></div>';
+  // ── SECTION 3: Run-in + Context ──
+  var p3 = p2.then(function(html2) {
+    sections.push(cleanMarkdown(html2));
+    addLog('[Writer] Section 3/4: Run-in analysis...');
+    var s3 = 'Write the RUN-IN ANALYSIS section of a match preview.\n\n'
+      + '=== FULL RESEARCH DATA ===\n' + rc.slice(0, 6000) + '\n=== END ===\n\n'
+      + 'YOUR TASK:\n'
+      + 'h2 "The Run-In: What Lies Ahead"\n'
+      + '- List ALL upcoming fixtures for ' + teamName + ' from the data (dates, opponents, home/away)\n'
+      + '- List ALL upcoming fixtures for the opponent\n'
+      + '- Analyse which fixtures are hard (playing teams near top) vs easy\n'
+      + '- State how many games remain for each team\n'
+      + '- Explain what a win, draw, or loss in THIS match means for each team\'s season objectives\n'
+      + '- Use the league position data to calculate points gaps if available';
 
-  var p2 = p1.then(function(s1Html) {
-    addLog('[Writer] Section 2/5: Tactical analysis + player names...');
-    sections.push(cleanMarkdown(s1Html));
-    return delay(1500).then(function() { return callLLM(baseRules, s2Prompt, tokenLimit); });
+    return delay(2000).then(function() { return callLLM(baseSystem, s3, tokenLimit); });
   });
 
-  // ── SECTION 3: Run-in analysis (uses: upcoming fixtures for both teams) ──
-  var s3Prompt = 'Write a RUN-IN ANALYSIS section for a match preview.\n\n'
-    + 'FIXTURE:\n' + fixtureBlock + '\n\n'
-    + (enrichBlock ? 'LEAGUE POSITIONS:\n' + enrichBlock + '\n\n' : '')
-    + 'UPCOMING FIXTURES:\n' + fixturesBlock + '\n\n'
-    + 'REQUIRED OUTPUT:\n'
-    + '1. An h2 "The Run-In: What Lies Ahead" section\n'
-    + '2. List all upcoming fixtures for both teams\n'
-    + '3. Analyse the difficulty: are promotion-chasers playing each other? Easy or hard fixtures? Home or away heavy?\n'
-    + '4. State how many games remain and the points gap to objectives\n'
-    + '5. Explain WHY this specific match matters in the context of the run-in';
+  // ── SECTION 4: FAQ + Sources ──
+  var p4 = p3.then(function(html3) {
+    sections.push(cleanMarkdown(html3));
+    addLog('[Writer] Section 4/4: FAQ + Sources...');
+    var s4 = 'Write the FAQ and Sources for a match preview.\n\n'
+      + '=== KEY FACTS ===\n'
+      + 'Match: Crawley Town vs Grimsby Town, Monday 6 April 2026, 15:00 BST\n'
+      + 'TV: Sky Sports+ (all League Two matches). Streaming: Sky Go, NOW TV, iFollow (overseas)\n'
+      + (rc.indexOf('PERPLEXITY') >= 0 ? rc.slice(rc.indexOf('PERPLEXITY'), rc.indexOf('PERPLEXITY') + 800) + '\n' : '')
+      + '=== END ===\n\n'
+      + 'YOUR TASK:\n'
+      + '1. h2 "Frequently Asked Questions"\n'
+      + '2. 4 Q&As using <details><summary>Q?</summary><p>Answer.</p></details>\n'
+      + '   Q1: What channel is Crawley vs Grimsby on? A: Sky Sports+ (all L2 matches). Also Sky Go, NOW TV, iFollow.\n'
+      + '   Q2: What time is kick-off? A: 15:00 BST, Monday 6 April 2026.\n'
+      + '   Q3: What were the last results? A: Use the data.\n'
+      + '   Q4: What are the league positions? A: Use the data.\n'
+      + '3. FAQ schema: <script type="application/ld+json">...</script>\n'
+      + '4. <p class="wc-sources"><strong>Sources:</strong> BBC Sport, live-footballontv.com, EFL.</p>';
 
-  var p3 = p2.then(function(s2Html) {
-    addLog('[Writer] Section 3/5: Run-in analysis...');
-    sections.push(cleanMarkdown(s2Html));
-    return delay(1500).then(function() { return callLLM(baseRules, s3Prompt, tokenLimit); });
+    return delay(2000).then(function() { return callLLM(baseSystem, s4, tokenLimit); });
   });
 
-  // ── SECTION 4: How to Watch (uses: TV data — MANDATORY for WhatChan) ──
-  var s4Prompt = 'Write a HOW TO WATCH section for a match preview.\n\n'
-    + 'FIXTURE:\n' + fixtureBlock + '\n\n'
-    + (tvBlock ? 'TV BROADCAST DATA:\n' + tvBlock + '\n\n' : '')
-    + (tvNote ? tvNote + '\n\n' : '')
-    + 'REQUIRED OUTPUT:\n'
-    + '1. An h2 "How to Watch ' + spec.team + ' vs [Opponent]" section\n'
-    + '2. State the EXACT TV channel: for League Two this is Sky Sports+\n'
-    + '3. Kick-off time and date\n'
-    + '4. Streaming options: Sky Go, NOW TV for UK subscribers\n'
-    + '5. iFollow for overseas supporters\n'
-    + '6. This section is MANDATORY — WhatChan is a TV/streaming guide site. Do NOT skip it.';
-
-  var p4 = p3.then(function(s3Html) {
-    addLog('[Writer] Section 4/5: How to Watch (mandatory)...');
-    sections.push(cleanMarkdown(s3Html));
-    return delay(1500).then(function() { return callLLM(baseRules, s4Prompt, tokenLimit); });
-  });
-
-  // ── SECTION 5: FAQ + Sources (uses: all data) ──
-  var s5Prompt = 'Write a FAQ section and Sources line for a match preview.\n\n'
-    + 'FIXTURE:\n' + fixtureBlock + '\n\n'
-    + (enrichBlock ? 'KEY FACTS:\n' + enrichBlock + '\n\n' : '')
-    + 'REQUIRED OUTPUT:\n'
-    + '1. An h2 "Frequently Asked Questions"\n'
-    + '2. 4 Q&As using <details><summary>Question?</summary><p>Answer from the data only.</p></details>\n'
-    + '3. Plus a <script type="application/ld+json"> FAQ schema block\n'
-    + '4. <p class="wc-sources"><strong>Sources:</strong> BBC Sport match reports, live-footballontv.com broadcast listings, official EFL data.</p>';
-
-  var p5 = p4.then(function(s4Html) {
-    addLog('[Writer] Section 5/5: FAQ + Sources...');
-    sections.push(cleanMarkdown(s4Html));
-    return delay(1500).then(function() { return callLLM(baseRules, s5Prompt, tokenLimit); });
-  });
-
-  // Assemble all sections
-  return p5.then(function(s5Html) {
-    sections.push(cleanMarkdown(s5Html));
-    addLog('[Writer] All 5 sections complete — assembling article', 'ok');
+  return p4.then(function(html4) {
+    sections.push(cleanMarkdown(html4));
+    addLog('[Writer] All 4 sections complete — assembling article', 'ok');
     return sections.join('\n\n');
   });
 }
