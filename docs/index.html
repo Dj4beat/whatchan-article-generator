@@ -689,6 +689,7 @@
 
 <footer>
   WhatChan Article Generator &mdash; Built by <a href="https://whatchan.co.uk/about-whatchan-adrian-dane" target="_blank">Adrian Dane</a>
+  &nbsp;&nbsp;<button class="btn btn-ghost sm" style="color:#7c3aed;font-size:.7rem;opacity:.6;" onclick="runModelEvaluation()">Evaluate Models</button>
 </footer>
 
 <!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
@@ -1457,10 +1458,15 @@ function researchMatchPreview(team) {
 //  The model cannot drift into generic territory because it only
 //  sees the specific facts needed for that section.
 // ═══════════════════════════════════════════════════════════════
-function writeMatchPreviewSections(researchContext, spec) {
+function writeMatchPreviewSections(researchContext, spec, modelId) {
   var sport = SPORTS[ACTIVE_SPORT];
   var rc = researchContext || '';
   var teamName = spec.team || '';
+  var useModel = modelId || ACTIVE_MODEL;
+  // Helper: call a specific model (or default) for section writing
+  function callSection(sysPrompt, userPrompt, tokens) {
+    return callModel(useModel, sysPrompt, userPrompt, tokens);
+  }
   // Pass the FULL research context to every section — but give each a FOCUSED task
   var baseSystem = 'You are ' + AUTHOR.name + ', football journalist for WhatChan (' + sport.siteUrl + '). '
     + 'British English. Pure HTML only — no markdown, no backticks, no code fences. Punchy sentences. '
@@ -1487,7 +1493,7 @@ function writeMatchPreviewSections(researchContext, spec) {
     + '5. Stats strip: <div class="wc-stats-strip"> with 4 stat cards using REAL numbers from the data\n\n'
     + 'CRITICAL: If the match reports mention "Tobias Brennan curled in a shot" — write "Brennan" in your text. If "Harry McKirdy scored a double" — write "McKirdy" in your text. USE THE NAMES.';
 
-  var p1 = delay(500).then(function() { return callLLM(baseSystem, s1, tokenLimit); });
+  var p1 = delay(500).then(function() { return callSection(baseSystem, s1, tokenLimit); });
 
   // ── SECTION 2: Tactical + Players + How to Watch ──
   var p2 = p1.then(function(html1) {
@@ -1511,7 +1517,7 @@ function writeMatchPreviewSections(researchContext, spec) {
       + '- If the research data mentions any other broadcast info, include it.\n'
       + '- DO NOT say "broadcast details not confirmed" — they ARE confirmed: Sky Sports+.\n';
 
-    return delay(2000).then(function() { return callLLM(baseSystem, s2, tokenLimit); });
+    return delay(2000).then(function() { return callSection(baseSystem, s2, tokenLimit); });
   });
 
   // ── SECTION 3: Run-in + Context ──
@@ -1529,7 +1535,7 @@ function writeMatchPreviewSections(researchContext, spec) {
       + '- Explain what a win, draw, or loss in THIS match means for each team\'s season objectives\n'
       + '- Use the league position data to calculate points gaps if available';
 
-    return delay(2000).then(function() { return callLLM(baseSystem, s3, tokenLimit); });
+    return delay(2000).then(function() { return callSection(baseSystem, s3, tokenLimit); });
   });
 
   // ── SECTION 4: FAQ + Sources ──
@@ -1552,7 +1558,7 @@ function writeMatchPreviewSections(researchContext, spec) {
       + '3. FAQ schema: <scr' + 'ipt type="application/ld+json">...</scr' + 'ipt>\n'
       + '4. <p class="wc-sources"><strong>Sources:</strong> BBC Sport, live-footballontv.com, EFL.</p>';
 
-    return delay(2000).then(function() { return callLLM(baseSystem, s4, tokenLimit); });
+    return delay(2000).then(function() { return callSection(baseSystem, s4, tokenLimit); });
   });
 
   return p4.then(function(html4) {
@@ -4759,6 +4765,145 @@ function switchSport(sportId) {
   if (PROXY_URL.indexOf('your-subdomain') < 0) {
     loadFeeds();
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MODEL EVALUATION — tests multiple models on the same preview
+// ═══════════════════════════════════════════════════════════════
+var EVAL_MODELS = [
+  { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'cheap' },
+  { id: 'google/gemini-2.5-pro-preview-03-25', label: 'Gemini 2.5 Pro', tier: 'mid' },
+  { id: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini', tier: 'cheap' },
+  { id: 'openai/gpt-4.1', label: 'GPT-4.1', tier: 'mid' },
+  { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'cheap' },
+  { id: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4', tier: 'mid' },
+  { id: 'x-ai/grok-3-beta', label: 'Grok 3', tier: 'mid' },
+  { id: 'deepseek/deepseek-chat-v3-0324', label: 'DeepSeek V3', tier: 'cheap' }
+];
+
+function scoreArticle(articleHtml, researchContext) {
+  var prompt = 'Score this match preview article against 10 criteria. For each criterion, give a score from 1-10.\n\n'
+    + '=== RESEARCH DATA (what the writer had available) ===\n' + (researchContext || '').slice(0, 3000) + '\n=== END RESEARCH ===\n\n'
+    + '=== ARTICLE TO SCORE ===\n' + (articleHtml || '').slice(0, 5000) + '\n=== END ARTICLE ===\n\n'
+    + 'Score each criterion 1-10:\n'
+    + '1. PLAYER_NAMES: How many specific players from the match reports are named in the article? (1=none, 5=1-2, 8=3-4, 10=5+)\n'
+    + '2. TV_BROADCAST: Does it mention Sky Sports+, Sky Go, NOW TV, iFollow? (1=no mention, 5=vague, 10=all four named)\n'
+    + '3. LEAGUE_POSITIONS: Both teams\' exact positions and points stated? (1=neither, 5=one team, 10=both with points)\n'
+    + '4. STAKES: Play-offs/promotion/relegation context explained? (1=none, 5=vague, 10=specific with points gaps)\n'
+    + '5. REPORT_USAGE: Specific events from BBC reports referenced? (1=none, 5=vague refs, 10=specific plays/goals cited)\n'
+    + '6. RUN_IN: Upcoming fixtures listed and analysed? (1=none, 5=mentioned, 10=full list with difficulty)\n'
+    + '7. NO_FABRICATION: Does it avoid invented results/sources? (1=multiple fabrications, 5=minor issues, 10=all facts traceable)\n'
+    + '8. TACTICAL_MATCHUPS: Named player-vs-player battles? (1=none, 5=generic, 10=specific named matchups)\n'
+    + '9. WRITING_QUALITY: Punchy, British English, authoritative? (1=poor, 5=adequate, 10=excellent)\n'
+    + '10. HTML_COMPLIANCE: Pure HTML, no markdown, correct structure? (1=broken, 5=some issues, 10=perfect)\n\n'
+    + 'Return ONLY a JSON object (no markdown): {"scores":{"PLAYER_NAMES":X,"TV_BROADCAST":X,"LEAGUE_POSITIONS":X,"STAKES":X,"REPORT_USAGE":X,"RUN_IN":X,"NO_FABRICATION":X,"TACTICAL_MATCHUPS":X,"WRITING_QUALITY":X,"HTML_COMPLIANCE":X},"total":XX,"notes":"brief summary"}';
+
+  return callFreeLLM(
+    'You are a sports journalism quality evaluator. Score the article strictly against the criteria. Be harsh — generic content scores low.',
+    prompt, 800
+  ).then(function(raw) {
+    var clean = raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
+    var s = clean.indexOf('{');
+    var e = clean.lastIndexOf('}');
+    if (s >= 0 && e > s) return JSON.parse(clean.slice(s, e + 1));
+    return { scores: {}, total: 0, notes: 'Failed to parse score' };
+  }).catch(function() {
+    return { scores: {}, total: 0, notes: 'Scoring failed' };
+  });
+}
+
+function runModelEvaluation() {
+  if (S.generating) { alert('Wait for current generation to finish.'); return; }
+  S.generating = true;
+  showTab('gen');
+  addLog('═══ MODEL EVALUATION STARTING ═══', 'ok');
+  addLog('Step 1: Gathering research data for Grimsby Town...');
+
+  // Phase 1: Gather research once
+  researchMatchPreview('Grimsby Town').then(function(research) {
+    if (research.abort) {
+      addLog('EVAL ABORTED: ' + research.reason, 'err');
+      S.generating = false;
+      return;
+    }
+    var rc = research.context;
+    addLog('Research gathered: ' + rc.length + ' chars. Starting model tests...', 'ok');
+
+    // Phase 2: Test each model sequentially
+    var results = [];
+    var idx = 0;
+
+    function testNext() {
+      if (idx >= EVAL_MODELS.length) {
+        // Phase 4: Report
+        addLog('═══ ALL MODELS TESTED — RESULTS ═══', 'ok');
+        results.sort(function(a, b) { return b.total - a.total; });
+        results.forEach(function(r, i) {
+          var badge = i === 0 ? ' ★ BEST' : '';
+          addLog((i + 1) + '. ' + r.label + ' — TOTAL: ' + r.total + '/100 [' + r.tier + ']' + badge
+            + ' | Players:' + (r.scores.PLAYER_NAMES || '?')
+            + ' TV:' + (r.scores.TV_BROADCAST || '?')
+            + ' Pos:' + (r.scores.LEAGUE_POSITIONS || '?')
+            + ' Stakes:' + (r.scores.STAKES || '?')
+            + ' Reports:' + (r.scores.REPORT_USAGE || '?')
+            + ' RunIn:' + (r.scores.RUN_IN || '?')
+            + ' NoFab:' + (r.scores.NO_FABRICATION || '?')
+            + ' Tactic:' + (r.scores.TACTICAL_MATCHUPS || '?')
+            + ' Quality:' + (r.scores.WRITING_QUALITY || '?')
+            + ' HTML:' + (r.scores.HTML_COMPLIANCE || '?'),
+            i === 0 ? 'ok' : '');
+        });
+        addLog('═══ RECOMMENDATION ═══');
+        var best = results[0];
+        var bestValue = results.filter(function(r) { return r.tier === 'cheap'; }).sort(function(a, b) { return b.total - a.total; })[0];
+        addLog('BEST OVERALL: ' + best.label + ' (' + best.total + '/100)', 'ok');
+        if (bestValue) addLog('BEST VALUE (cheap tier): ' + bestValue.label + ' (' + bestValue.total + '/100)', 'ok');
+        addLog('Notes: ' + best.notes);
+        S.generating = false;
+        return;
+      }
+
+      var model = EVAL_MODELS[idx];
+      addLog('Testing model ' + (idx + 1) + '/' + EVAL_MODELS.length + ': ' + model.label + ' [' + model.tier + ']...');
+
+      var spec = { team: 'Grimsby Town', category: 'Match Previews', typeId: 'preview', title: 'Grimsby Town Match Preview' };
+
+      writeMatchPreviewSections(rc, spec, model.id).then(function(article) {
+        article = cleanMarkdown(article);
+        addLog(model.label + ': article generated (' + article.length + ' chars). Scoring...');
+
+        return delay(2000).then(function() {
+          return scoreArticle(article, rc);
+        }).then(function(score) {
+          var total = 0;
+          if (score.scores) {
+            Object.keys(score.scores).forEach(function(k) { total += (score.scores[k] || 0); });
+          }
+          results.push({
+            id: model.id,
+            label: model.label,
+            tier: model.tier,
+            scores: score.scores || {},
+            total: total,
+            notes: score.notes || '',
+            articleLength: article.length
+          });
+          addLog(model.label + ': SCORED ' + total + '/100 — ' + (score.notes || ''), total >= 70 ? 'ok' : 'warn');
+        });
+      }).catch(function(e) {
+        addLog(model.label + ': FAILED — ' + e.message, 'err');
+        results.push({ id: model.id, label: model.label, tier: model.tier, scores: {}, total: 0, notes: 'Error: ' + e.message, articleLength: 0 });
+      }).finally(function() {
+        idx++;
+        delay(3000).then(testNext); // 3s gap between models to avoid rate limits
+      });
+    }
+
+    testNext();
+  }).catch(function(e) {
+    addLog('EVAL FAILED: ' + e.message, 'err');
+    S.generating = false;
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
