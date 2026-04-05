@@ -1610,19 +1610,29 @@ function buildInfographic(statsText, spec) {
   });
 }
 
-// Insert infographic at article midpoint (mirrors insertMidBanner pattern)
-function insertInfographic(bodyHtml, infographicHtml) {
-  if (!infographicHtml) return bodyHtml;
+// Insert content at a given percentage of the article body (before nearest <h2>)
+// targetPct: 0.0-1.0 (e.g. 0.4 = 40% through the article)
+function insertAtPercent(bodyHtml, contentHtml, targetPct, commentTag) {
+  if (!contentHtml) return bodyHtml;
   var h2positions = [];
   var re = /<h2[\s>]/gi;
   var m;
   while ((m = re.exec(bodyHtml)) !== null) h2positions.push(m.index);
-  if (h2positions.length < 2) return bodyHtml + '\n' + infographicHtml;
-  var mid = bodyHtml.length / 2;
+  if (h2positions.length < 2) {
+    // Not enough headings — find the first paragraph break after target position
+    var targetPos = Math.floor(bodyHtml.length * targetPct);
+    var pBreak = bodyHtml.indexOf('</p>', targetPos);
+    if (pBreak > 0) {
+      pBreak += 4; // after </p>
+      return bodyHtml.slice(0, pBreak) + '\n' + (commentTag || '') + '\n' + contentHtml + '\n\n' + bodyHtml.slice(pBreak);
+    }
+    return bodyHtml + '\n' + contentHtml; // absolute fallback
+  }
+  var target = bodyHtml.length * targetPct;
   var best = h2positions.reduce(function(prev, pos) {
-    return Math.abs(pos - mid) < Math.abs(prev - mid) ? pos : prev;
+    return Math.abs(pos - target) < Math.abs(prev - target) ? pos : prev;
   });
-  return bodyHtml.slice(0, best) + '\n<!-- Match Infographic -->\n' + infographicHtml + '\n\n' + bodyHtml.slice(best);
+  return bodyHtml.slice(0, best) + '\n' + (commentTag || '') + '\n' + contentHtml + '\n\n' + bodyHtml.slice(best);
 }
 
 function formatSavedDate(ts) {
@@ -2305,9 +2315,9 @@ function buildWpBlock(spec, body, seo) {
     return bodyHtml.slice(0, best) + '\n<!-- Sport TV Banner -->\n' + bannerHtml + '\n\n' + bodyHtml.slice(best);
   }
 
-  // Insert infographic at midpoint (if available), then sport banner
-  var bodyWithInfographic = (spec._infographicHtml) ? insertInfographic(body, spec._infographicHtml) : body;
-  var bodyWithBanner = insertMidBanner(bodyWithInfographic, sportBanner);
+  // Insert infographic at ~40% (if available), sport banner at ~60% — never adjacent
+  var bodyWithInfographic = (spec._infographicHtml) ? insertAtPercent(body, spec._infographicHtml, 0.4, '<!-- Match Infographic -->') : body;
+  var bodyWithBanner = (sportBanner) ? insertAtPercent(bodyWithInfographic, sportBanner, 0.65, '<!-- Sport TV Banner -->') : bodyWithInfographic;
 
   // Tags HTML
   var tagsArr = seo.tags || spec.keywords;
@@ -2332,10 +2342,10 @@ function buildWpBlock(spec, body, seo) {
     '',
     bodyWithBanner,
     '',
-    '<!-- Blog Banner -->',
-    blogBannerHtml,
-    '',
     tagsHtml,
+    '',
+    '<!-- Blog Banner (after tags, at the very end) -->',
+    blogBannerHtml,
     '',
     '</div>'
   ].join('\n');
@@ -2825,10 +2835,12 @@ function runArticlePipeline(opts) {
       });
     })
     .then(function(result) {
-      // Build infographic if user ticked the checkbox and fetched stats
-      var infographicPromise = (S.infographicData && S.infographicData.text)
-        ? buildInfographic(S.infographicData.text, spec)
-        : Promise.resolve('');
+      // Build infographic: use fetched stats URL, or fall back to research context if checkbox ticked
+      var infChecked = document.getElementById('infographic-check');
+      var infSource = (S.infographicData && S.infographicData.text) ? S.infographicData.text
+        : (infChecked && infChecked.checked && result.newsContext) ? result.newsContext
+        : '';
+      var infographicPromise = infSource ? buildInfographic(infSource, spec) : Promise.resolve('');
       return infographicPromise.then(function(infHtml) {
         spec._infographicHtml = infHtml;
         showPipeline(pipe, 'done');
@@ -3014,8 +3026,10 @@ function runEgGenerate() {
           .catch(function() { return r; });
       })
       .then(function(result) {
-        var infP = (S.infographicData && S.infographicData.text)
-          ? buildInfographic(S.infographicData.text, spec) : Promise.resolve('');
+        var infChecked = document.getElementById('infographic-check');
+        var infSrc = (S.infographicData && S.infographicData.text) ? S.infographicData.text
+          : (infChecked && infChecked.checked && result.matchContext) ? result.matchContext : '';
+        var infP = infSrc ? buildInfographic(infSrc, spec) : Promise.resolve('');
         return infP.then(function(infHtml) {
           spec._infographicHtml = infHtml;
           spec.title = result.seo.h1 || spec.title;
@@ -3669,8 +3683,12 @@ function generateFromCustom() {
 
   // Shared finish + cleanup helpers used by both pipelines
   function finish(result, hadHallucinations) {
-    var infP = (S.infographicData && S.infographicData.text)
-      ? buildInfographic(S.infographicData.text, spec) : Promise.resolve('');
+    // Infographic sources: (1) fetched stats URL, (2) match research context, (3) skip
+    var infChecked = document.getElementById('infographic-check');
+    var infSource = (S.infographicData && S.infographicData.text) ? S.infographicData.text
+      : (infChecked && infChecked.checked && result.matchContext) ? result.matchContext
+      : '';
+    var infP = infSource ? buildInfographic(infSource, spec) : Promise.resolve('');
     infP.then(function(infHtml) {
       spec._infographicHtml = infHtml;
       showPipeline(pipelineEl, 'done');
