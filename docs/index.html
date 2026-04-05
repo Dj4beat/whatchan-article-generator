@@ -1584,71 +1584,113 @@ function fetchInfographicData() {
 //  INFOGRAPHIC BUILDER — generates visual HTML from stats data
 // ═══════════════════════════════════════════════════════════════
 function buildInfographic(statsText, spec) {
-  var team = spec.team || '';
-  var prompt = 'Build an HTML match statistics infographic. The STAT BARS are the main content — the score header is secondary.\n\n'
+  // Step 1: Use LLM to extract structured JSON from the raw stats text
+  var prompt = 'Extract match statistics from the data below into a JSON object.\n\n'
     + '=== STATS DATA ===\n' + (statsText || '').slice(0, 4000) + '\n=== END ===\n\n'
-    + 'OUTPUT ONLY HTML. No markdown. No explanation. No backticks.\n\n'
-    + 'EXACT STRUCTURE — you MUST follow this precisely:\n\n'
-    + '<div class="wc-infographic">\n'
-    + '<div class="wc-infographic-title">MATCH STATISTICS</div>\n'
-    + '<div class="wc-match-score"><div class="wc-ms-teams"><span>HOME TEAM</span><span class="wc-ms-vs">SCORE</span><span>AWAY TEAM</span></div><div class="wc-ms-meta">Competition &middot; Date &middot; Venue</div></div>\n\n'
-    + 'NOW THE CRITICAL PART — STAT BARS. You MUST include AT LEAST 6 stat rows. Each stat needs TWO divs:\n\n'
-    + 'DIV 1 — the bar:\n'
-    + '<div class="wc-stat-row"><div class="wc-sr-val">HOME_VALUE</div><div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:HOME_PCT%"></div><div class="wc-sr-bar-away" style="width:AWAY_PCT%"></div></div><div class="wc-sr-val">AWAY_VALUE</div></div>\n\n'
-    + 'DIV 2 — the label (immediately after the bar):\n'
-    + '<div class="wc-stat-row"><div class="wc-sr-val"></div><div class="wc-sr-label">STAT NAME</div><div class="wc-sr-val"></div></div>\n\n'
-    + 'CALCULATING WIDTHS:\n'
-    + '- For percentages (possession 62% vs 38%): use directly — width:62% and width:38%\n'
-    + '- For counts (shots 15 vs 8): home_pct = round(15/(15+8)*100) = 65, away_pct = 35\n'
-    + '- Both widths MUST sum to 100%\n'
-    + '- If both values are 0, use 50% each\n\n'
-    + 'MANDATORY STATS (include every one that appears in the data):\n'
-    + '1. Possession\n'
-    + '2. Total Shots\n'
-    + '3. Shots on Target\n'
-    + '4. Expected Goals (xG)\n'
-    + '5. Corners\n'
-    + '6. Fouls\n'
-    + '7. Yellow Cards\n'
-    + '8. Passes\n'
-    + '9. Pass Accuracy\n'
-    + '10. Tackles\n'
-    + '11. Saves\n'
-    + '12. Offsides\n\n'
-    + 'COMPLETE EXAMPLE of one stat (Possession 62% vs 38%):\n'
-    + '<div class="wc-stat-row"><div class="wc-sr-val">62%</div><div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:62%"></div><div class="wc-sr-bar-away" style="width:38%"></div></div><div class="wc-sr-val">38%</div></div>\n'
-    + '<div class="wc-stat-row"><div class="wc-sr-val"></div><div class="wc-sr-label">Possession</div><div class="wc-sr-val"></div></div>\n\n'
-    + 'Repeat this EXACT pattern for every available stat. Do NOT skip stats. Do NOT output just the header.\n\n'
-    + 'Close with </div> to end the wc-infographic.\n\n'
+    + 'Return ONLY a JSON object (no markdown, no backticks, no explanation):\n'
+    + '{\n'
+    + '  "homeTeam": "Team Name",\n'
+    + '  "awayTeam": "Team Name",\n'
+    + '  "score": "2-1",\n'
+    + '  "competition": "La Liga",\n'
+    + '  "date": "4 April 2026",\n'
+    + '  "venue": "Stadium Name",\n'
+    + '  "stats": [\n'
+    + '    { "label": "Possession", "home": "62%", "away": "38%" },\n'
+    + '    { "label": "Total Shots", "home": "18", "away": "7" },\n'
+    + '    { "label": "Shots on Target", "home": "6", "away": "3" },\n'
+    + '    { "label": "Expected Goals (xG)", "home": "1.89", "away": "0.74" },\n'
+    + '    { "label": "Corners", "home": "8", "away": "2" },\n'
+    + '    { "label": "Fouls", "home": "10", "away": "14" },\n'
+    + '    { "label": "Yellow Cards", "home": "1", "away": "3" },\n'
+    + '    { "label": "Passes", "home": "542", "away": "310" },\n'
+    + '    { "label": "Pass Accuracy", "home": "87%", "away": "74%" },\n'
+    + '    { "label": "Tackles", "home": "15", "away": "22" },\n'
+    + '    { "label": "Saves", "home": "2", "away": "4" },\n'
+    + '    { "label": "Offsides", "home": "3", "away": "1" }\n'
+    + '  ]\n'
+    + '}\n\n'
     + 'RULES:\n'
-    + '- The infographic MUST have at least 6 stat bar rows or it is useless\n'
-    + '- Use ONLY numbers from the data — never invent stats\n'
-    + '- If a stat is missing from the data, skip it — but include every stat that IS present\n'
-    + '- NO HTML comments in the output\n'
-    + '- NO markdown in the output';
+    + '- Include EVERY stat that appears in the data. The more stats the better.\n'
+    + '- Use ONLY values from the data. Never invent numbers.\n'
+    + '- If a stat is not in the data, do not include it in the stats array.\n'
+    + '- Values can be numbers ("18") or percentages ("62%"). Include the % sign for percentages.';
 
   addLog('Building infographic from stats data...');
   return callFreeLLM(
-    'You are an HTML infographic builder. Output ONLY valid HTML with the exact CSS classes provided. The stat comparison bars are the MOST IMPORTANT part — you MUST include at least 6 bars. A header-only infographic is a failure. Calculate all percentages accurately. Never invent data.',
-    prompt, 4000
-  ).then(function(html) {
-    // Clean any markdown wrapping
-    html = html.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
-    // Validate it has actual stat bars, not just the header
-    if (html.indexOf('wc-infographic') < 0) {
-      addLog('Infographic: model did not produce valid structure — skipping', 'warn');
-      return '';
-    }
-    // Count stat bar rows — reject if fewer than 3 (header-only is useless)
-    var barCount = (html.match(/wc-sr-bar-home/g) || []).length;
-    if (barCount < 3) {
-      addLog('Infographic: only ' + barCount + ' stat bars (need 3+) — rebuilding...', 'warn');
-      // Don't return empty — return what we have, it's better than nothing even if thin
-    }
-    addLog('Infographic built: ' + barCount + ' stat comparison bars', 'ok');
+    'You are a sports data extractor. Read the provided stats and return a structured JSON object. Include every available stat. Never invent data. Output ONLY valid JSON.',
+    prompt, 1500
+  ).then(function(raw) {
+    // Parse the JSON response
+    var clean = raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
+    var s = clean.indexOf('{');
+    var e = clean.lastIndexOf('}');
+    if (s < 0 || e <= s) throw new Error('No valid JSON in response');
+    var data = JSON.parse(clean.slice(s, e + 1));
+
+    if (!data.stats || !data.stats.length) throw new Error('No stats extracted');
+
+    // Step 2: Build the HTML deterministically in JavaScript — no LLM needed
+    var html = '<div class="wc-infographic">\n';
+    html += '<div class="wc-infographic-title">MATCH STATISTICS</div>\n';
+
+    // Score header
+    html += '<div class="wc-match-score">';
+    html += '<div class="wc-ms-teams"><span>' + escHtml(data.homeTeam || 'Home') + '</span>';
+    html += '<span class="wc-ms-vs">' + escHtml(data.score || 'vs') + '</span>';
+    html += '<span>' + escHtml(data.awayTeam || 'Away') + '</span></div>';
+    var meta = [data.competition, data.date, data.venue].filter(Boolean).join(' &middot; ');
+    if (meta) html += '<div class="wc-ms-meta">' + meta + '</div>';
+    html += '</div>\n';
+
+    // Stat bars — built deterministically with exact percentage calculation
+    data.stats.forEach(function(stat) {
+      var hVal = (stat.home || '0').toString();
+      var aVal = (stat.away || '0').toString();
+      var hNum = parseFloat(hVal.replace('%', '')) || 0;
+      var aNum = parseFloat(aVal.replace('%', '')) || 0;
+      var total = hNum + aNum;
+      var hPct, aPct;
+      if (hVal.indexOf('%') >= 0 && aVal.indexOf('%') >= 0) {
+        // Already percentages — use directly
+        hPct = hNum;
+        aPct = aNum;
+        if (Math.abs(hPct + aPct - 100) > 5) { // normalise if they don't sum to 100
+          var norm = hPct + aPct;
+          hPct = norm > 0 ? Math.round(hPct / norm * 100) : 50;
+          aPct = 100 - hPct;
+        }
+      } else if (total > 0) {
+        hPct = Math.round(hNum / total * 100);
+        aPct = 100 - hPct;
+      } else {
+        hPct = 50; aPct = 50;
+      }
+
+      // Bar row
+      html += '<div class="wc-stat-row">';
+      html += '<div class="wc-sr-val">' + escHtml(hVal) + '</div>';
+      html += '<div class="wc-sr-bar-wrap">';
+      html += '<div class="wc-sr-bar-home" style="width:' + hPct + '%"></div>';
+      html += '<div class="wc-sr-bar-away" style="width:' + aPct + '%"></div>';
+      html += '</div>';
+      html += '<div class="wc-sr-val">' + escHtml(aVal) + '</div>';
+      html += '</div>\n';
+
+      // Label row
+      html += '<div class="wc-stat-row">';
+      html += '<div class="wc-sr-val"></div>';
+      html += '<div class="wc-sr-label">' + escHtml(stat.label || '') + '</div>';
+      html += '<div class="wc-sr-val"></div>';
+      html += '</div>\n';
+    });
+
+    html += '</div>';
+
+    addLog('Infographic built: ' + data.stats.length + ' stat comparison bars', 'ok');
     return html;
-  }).catch(function(e) {
-    addLog('Infographic build failed: ' + e.message, 'warn');
+  }).catch(function(err) {
+    addLog('Infographic build failed: ' + err.message, 'warn');
     return '';
   });
 }
