@@ -238,6 +238,76 @@ function parseBbcMatchStats(html) {
   return { homeTeam, awayTeam, score, competition, stats };
 }
 
+// ── BBC team data parser — extracts fixtures, results, and match report links ──
+// Works on the scores-fixtures page: /sport/football/teams/[slug]/scores-fixtures
+function parseBbcTeamData(html, pageType) {
+  const m = html.match(/window\.__INITIAL_DATA__="([\s\S]*?)";/);
+  if (!m) throw new Error('No __INITIAL_DATA__ on this BBC page');
+  const raw = m[1].replace(/\\\\"/g, '"').replace(/\\"/g, '"');
+
+  const results = [];
+  const fixtures = [];
+
+  // Parse all events (PostEvent = completed, PreEvent = upcoming)
+  const eventRe = /(PostEvent|PreEvent)/g;
+  let em;
+  while ((em = eventRe.exec(raw)) !== null) {
+    const type = em[1]; // PostEvent or PreEvent
+    const beforeChunk = raw.slice(Math.max(0, em.index - 400), em.index);
+    const afterChunk = raw.slice(em.index, em.index + 600);
+    const fullChunk = beforeChunk + afterChunk;
+
+    // Extract date
+    const dateMatch = beforeChunk.match(/"longDate":"([^"]+)"/);
+    const isoMatch = beforeChunk.match(/"isoDate":"([^"]+)"/);
+    const timeMatch = beforeChunk.match(/"displayTimeUK":"([^"]+)"/);
+
+    // Extract teams and scores from the participants
+    const teams = afterChunk.match(/"fullName":"([^"]+)"/g) || [];
+    const scores = afterChunk.match(/"fulltimeScore":"(\d+)"/g) || [];
+    const alignments = afterChunk.match(/"alignment":"(home|away)"/g) || [];
+
+    if (teams.length >= 2) {
+      const t1 = teams[0].replace(/"fullName":"/,'').replace(/"/,'');
+      const t2 = teams[1].replace(/"fullName":"/,'').replace(/"/,'');
+      const a1 = alignments[0] ? alignments[0].replace(/"alignment":"/,'').replace(/"/,'') : 'home';
+      const a2 = alignments[1] ? alignments[1].replace(/"alignment":"/,'').replace(/"/,'') : 'away';
+
+      const event = {
+        date: dateMatch ? dateMatch[1] : '',
+        isoDate: isoMatch ? isoMatch[1] : '',
+        time: timeMatch ? timeMatch[1] : '',
+        homeTeam: a1 === 'home' ? t1 : t2,
+        awayTeam: a1 === 'away' ? t1 : t2,
+      };
+
+      if (type === 'PostEvent' && scores.length >= 2) {
+        const s1 = scores[0].replace(/"fulltimeScore":"/,'').replace(/"/,'');
+        const s2 = scores[1].replace(/"fulltimeScore":"/,'').replace(/"/,'');
+        event.homeScore = a1 === 'home' ? s1 : s2;
+        event.awayScore = a1 === 'home' ? s2 : s1;
+        event.score = event.homeScore + '-' + event.awayScore;
+
+        // Try to find match report URL
+        const urlMatch = fullChunk.match(/\/sport\/football\/live\/([a-z0-9]+)/);
+        if (urlMatch) event.reportUrl = 'https://www.bbc.com/sport/football/live/' + urlMatch[1];
+
+        // Competition
+        const compMatch = afterChunk.match(/"name":"([^"]+)"/);
+        if (compMatch) event.competition = compMatch[1];
+
+        results.push(event);
+      } else if (type === 'PreEvent') {
+        const compMatch = afterChunk.match(/"name":"([^"]+)"/);
+        if (compMatch) event.competition = compMatch[1];
+        fixtures.push(event);
+      }
+    }
+  }
+
+  return { results, fixtures };
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -315,6 +385,61 @@ export default {
           ? titleMatch[1].replace(/&amp;/g, '&').replace(/&#039;/g, "'").replace(/&quot;/g, '"').trim()
           : '';
         return jsonResponse({ title, text, url: articleUrl }, 200, cors);
+      } catch (e) {
+        return jsonResponse({ error: e.message }, 500, cors);
+      }
+    }
+
+    // ── Route: POST /api/team-data → BBC team fixtures, results, match reports ──
+    if (url.pathname === '/api/team-data' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const teamSlug = body.teamSlug; // e.g. "grimsby-town"
+        if (!teamSlug) return jsonResponse({ error: 'Missing teamSlug' }, 400, cors);
+
+        const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+        // Fetch fixtures page (upcoming matches)
+        const fixturesUrl = 'https://www.bbc.com/sport/football/teams/' + teamSlug + '/scores-fixtures';
+        const fixturesRes = await fetch(fixturesUrl, { headers: { 'User-Agent': ua }, redirect: 'follow' });
+        let fixtures = [], results = [];
+        if (fixturesRes.ok) {
+          const fixturesHtml = await fixturesRes.text();
+          const fixturesData = parseBbcTeamData(fixturesHtml, 'fixtures');
+          fixtures = fixturesData.fixtures;
+          results = results.concat(fixturesData.results);
+        }
+
+        // Fetch results page (recent completed matches)
+        const resultsUrl = fixturesUrl + '?filter=results';
+        const resultsRes = await fetch(resultsUrl, { headers: { 'User-Agent': ua }, redirect: 'follow' });
+        if (resultsRes.ok) {
+          const resultsHtml = await resultsRes.text();
+          const resultsData = parseBbcTeamData(resultsHtml, 'results');
+          results = results.concat(resultsData.results);
+        }
+
+        // Fetch match report text for the most recent result (if available)
+        let lastMatchReport = '';
+        let lastMatchStats = null;
+        if (results.length > 0 && results[0].reportUrl) {
+          try {
+            const reportRes = await fetch(results[0].reportUrl, { headers: { 'User-Agent': ua }, redirect: 'follow' });
+            if (reportRes.ok) {
+              const reportHtml = await reportRes.text();
+              lastMatchReport = extractArticleText(reportHtml);
+              try { lastMatchStats = parseBbcMatchStats(reportHtml); } catch(e) { /* stats may not be available */ }
+            }
+          } catch(e) { /* match report fetch failed — not critical */ }
+        }
+
+        return jsonResponse({
+          teamSlug,
+          fixtures,
+          results,
+          lastMatchReport: lastMatchReport.slice(0, 4000),
+          lastMatchStats,
+        }, 200, cors);
       } catch (e) {
         return jsonResponse({ error: e.message }, 500, cors);
       }

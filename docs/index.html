@@ -1213,6 +1213,191 @@ function preResearch(title, sourceText) {
 // Deep research for match articles — uses Perplexity to find fixture/result data
 // Every line of output must contain a SPECIFIC fact (name, number, date, score).
 // If data cannot be found, say "NOT FOUND" — never approximate or generalise.
+// ═══════════════════════════════════════════════════════════════
+//  STRUCTURED MATCH RESEARCH — multi-step, source-specific
+//  Each data point comes from a dedicated, verifiable source.
+// ═══════════════════════════════════════════════════════════════
+
+// Convert team name to BBC URL slug: "Grimsby Town" → "grimsby-town"
+function teamNameToSlug(name) {
+  return (name || '').toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/^the-/, '')
+    .replace(/-fc$/, '')
+    .replace(/-afc$/, '');
+}
+
+// Fetch structured team data from BBC Sport via the worker
+function fetchBbcTeamData(team) {
+  var slug = teamNameToSlug(team);
+  addLog('[Research] Fetching BBC data for ' + team + ' (/' + slug + ')...');
+  return fetch(PROXY_URL + '/api/team-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
+    body: JSON.stringify({ teamSlug: slug })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    addLog('[Research] BBC data: ' + data.fixtures.length + ' fixtures, ' + data.results.length + ' results', 'ok');
+    return data;
+  })
+  .catch(function(e) {
+    addLog('[Research] BBC fetch failed for ' + team + ': ' + e.message, 'warn');
+    return { fixtures: [], results: [], lastMatchReport: '', lastMatchStats: null };
+  });
+}
+
+// Fetch a BBC match report by URL
+function fetchMatchReport(url) {
+  if (!url) return Promise.resolve('');
+  addLog('[Research] Fetching match report: ' + url.split('/').pop() + '...');
+  return fetch(PROXY_URL + '/api/fetch-article', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
+    body: JSON.stringify({ articleUrl: url })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error || !data.text) return '';
+    addLog('[Research] Report loaded: ' + (data.title || '').slice(0, 60), 'ok');
+    return data.text;
+  })
+  .catch(function() { return ''; });
+}
+
+// Multi-step match preview research — replaces single Perplexity call
+function researchMatchPreview(team) {
+  addLog('[Research] === STARTING STRUCTURED RESEARCH FOR ' + team.toUpperCase() + ' ===');
+
+  // Step 1: Get BBC data for the selected team — fixtures + last result
+  return fetchBbcTeamData(team).then(function(teamData) {
+    // Confirm the next fixture
+    if (!teamData.fixtures || !teamData.fixtures.length) {
+      addLog('[Research] ABORT: No upcoming fixtures found for ' + team, 'err');
+      return { abort: true, reason: 'No upcoming fixtures found for ' + team + ' on BBC Sport' };
+    }
+
+    var fixture = teamData.fixtures[0];
+    var opponent = (fixture.homeTeam === team || fixture.homeTeam.indexOf(team.split(' ')[0]) >= 0)
+      ? fixture.awayTeam : fixture.homeTeam;
+    var isHome = fixture.homeTeam.indexOf(team.split(' ')[0]) >= 0;
+
+    addLog('[Research] Next fixture: ' + fixture.homeTeam + ' vs ' + fixture.awayTeam + ' (' + fixture.date + ')');
+    addLog('[Research] ' + team + ' last result: ' + (teamData.results.length ? teamData.results[0].homeTeam + ' ' + teamData.results[0].score + ' ' + teamData.results[0].awayTeam : 'NOT FOUND'));
+
+    // Step 2: Get BBC data for the OPPONENT — fixtures + last result (in parallel with match reports)
+    return Promise.all([
+      fetchBbcTeamData(opponent),
+      teamData.lastMatchReport ? Promise.resolve(teamData.lastMatchReport) : (teamData.results.length && teamData.results[0].reportUrl ? fetchMatchReport(teamData.results[0].reportUrl) : Promise.resolve('')),
+      fetchReferenceSites(team, 'preview')
+    ]).then(function(parallel) {
+      var opponentData = parallel[0];
+      var teamReport = parallel[1];
+      var refData = parallel[2];
+
+      addLog('[Research] ' + opponent + ' last result: ' + (opponentData.results.length ? opponentData.results[0].homeTeam + ' ' + opponentData.results[0].score + ' ' + opponentData.results[0].awayTeam : 'NOT FOUND'));
+
+      // Get opponent's last match report too
+      return (opponentData.lastMatchReport ? Promise.resolve(opponentData.lastMatchReport) : (opponentData.results.length && opponentData.results[0].reportUrl ? fetchMatchReport(opponentData.results[0].reportUrl) : Promise.resolve('')))
+        .then(function(opponentReport) {
+
+          // Step 3: Build the structured research context from REAL DATA
+          var context = '=== VERIFIED MATCH RESEARCH (from BBC Sport — deterministic, not AI-generated) ===\n\n';
+
+          // Fixture
+          context += 'CONFIRMED NEXT FIXTURE:\n';
+          context += fixture.homeTeam + ' vs ' + fixture.awayTeam + '\n';
+          context += 'Date: ' + fixture.date + '\n';
+          context += 'Time: ' + (fixture.time || 'TBC') + ' BST\n';
+          context += 'Venue: ' + (isHome ? 'Home' : 'Away') + ' for ' + team + '\n';
+          context += 'Competition: ' + (fixture.competition || 'League Two') + '\n\n';
+
+          // Team results
+          context += team.toUpperCase() + ' RECENT RESULTS (from BBC Sport):\n';
+          if (teamData.results.length) {
+            teamData.results.forEach(function(r) {
+              context += r.date + ': ' + r.homeTeam + ' ' + r.score + ' ' + r.awayTeam + '\n';
+            });
+          } else { context += 'No recent results available on BBC Sport\n'; }
+          context += '\n';
+
+          // Team match report (the gold — real journalism)
+          if (teamReport) {
+            context += team.toUpperCase() + ' LAST MATCH REPORT (BBC Sport — use this for context, tone, stakes):\n';
+            context += teamReport.slice(0, 2000) + '\n\n';
+          }
+
+          // Opponent results
+          context += opponent.toUpperCase() + ' RECENT RESULTS (from BBC Sport):\n';
+          if (opponentData.results.length) {
+            opponentData.results.forEach(function(r) {
+              context += r.date + ': ' + r.homeTeam + ' ' + r.score + ' ' + r.awayTeam + '\n';
+            });
+          } else { context += 'No recent results available on BBC Sport\n'; }
+          context += '\n';
+
+          // Opponent match report
+          if (opponentReport) {
+            context += opponent.toUpperCase() + ' LAST MATCH REPORT (BBC Sport — use this for context, tone, stakes):\n';
+            context += opponentReport.slice(0, 2000) + '\n\n';
+          }
+
+          // Upcoming fixtures for both
+          context += team.toUpperCase() + ' UPCOMING FIXTURES:\n';
+          teamData.fixtures.slice(0, 4).forEach(function(f) {
+            context += f.date + ': ' + f.homeTeam + ' vs ' + f.awayTeam + '\n';
+          });
+          context += '\n' + opponent.toUpperCase() + ' UPCOMING FIXTURES:\n';
+          opponentData.fixtures.slice(0, 4).forEach(function(f) {
+            context += f.date + ': ' + f.homeTeam + ' vs ' + f.awayTeam + '\n';
+          });
+          context += '\n';
+
+          // Reference data (injuries, lineups, TV)
+          if (refData) {
+            context += '=== REFERENCE DATA ===\n' + refData + '\n\n';
+          }
+
+          // Step 4: One focused Perplexity call for data BBC doesn't provide
+          addLog('[Research] Step 4: Enriching with H2H, managers, table positions via Perplexity...');
+          var enrichPrompt = 'TODAY IS ' + TODAY_STR + '. For this CONFIRMED match: ' + fixture.homeTeam + ' vs ' + fixture.awayTeam + ' on ' + fixture.date + '.\n\n'
+            + 'I already have fixture, results, and match reports. I ONLY need these specific missing data points:\n\n'
+            + '1. LEAGUE TABLE POSITIONS — ' + team + ': Position, points, GD. ' + opponent + ': Position, points, GD\n'
+            + '2. HEAD-TO-HEAD — Last 5 meetings between ' + team + ' and ' + opponent + ': date, score, venue for each\n'
+            + '3. MANAGERS — ' + team + ' manager: [full name]. ' + opponent + ' manager: [full name]\n'
+            + '4. TOP SCORERS — Leading scorer for each team this season with goals tally\n\n'
+            + 'Return ONLY facts you can verify. Write "NOT FOUND" for anything you cannot confirm. Do NOT invent.';
+
+          return delay(1500).then(function() {
+            return callModel(
+              RESEARCH_MODEL,
+              'You are a sports fact-checker. Today is ' + TODAY_STR + '. Return ONLY verified facts for the specific data requested. Never invent data.',
+              enrichPrompt, 800
+            ).catch(function() { return ''; });
+          }).then(function(enrichment) {
+            if (enrichment) {
+              context += '=== PERPLEXITY ENRICHMENT (H2H, table positions, managers) ===\n' + enrichment + '\n\n';
+              addLog('[Research] Perplexity enrichment complete', 'ok');
+            }
+
+            addLog('[Research] === RESEARCH COMPLETE — ' + context.length + ' chars of verified data ===', 'ok');
+            return {
+              abort: false,
+              context: context,
+              fixture: fixture,
+              team: team,
+              opponent: opponent,
+              isHome: isHome
+            };
+          });
+        });
+    });
+  });
+}
+
+// Legacy function — still used for Match Reviews
 function preResearchMatch(team, typeId) {
   var prompt;
   if (typeId === 'preview') {
@@ -2957,27 +3142,34 @@ function runEgGenerate() {
     var baseTokens = getTokenLimit();
     var isMatchArticle = (spec.typeId === 'preview' || spec.typeId === 'review') && spec.team;
 
-    // Match articles: deep research first via Perplexity, then full pipeline with hallucination scan
+    // Match articles: structured multi-step research from verified sources
     // Evergreen articles: model knowledge only, lighter pipeline
     var researchPromise;
-    if (isMatchArticle) {
-      addLog('[' + spec.team + '] Step 1/6: Researching fixture + fetching reference data...');
-      // Perplexity research AND reference site scraping run in PARALLEL
+    if (isMatchArticle && spec.typeId === 'preview') {
+      // NEW: Structured research pipeline — BBC data + match reports + focused Perplexity enrichment
+      researchPromise = researchMatchPreview(spec.team).then(function(research) {
+        if (research.abort) {
+          addLog('[Research] ABORTED: ' + research.reason, 'err');
+          return ''; // Will produce a thin article — but won't fabricate
+        }
+        // Update spec with confirmed fixture data
+        if (research.opponent) spec.title = spec.team + ' vs ' + research.opponent + ': ' + (research.fixture.competition || 'League Two') + ' Preview';
+        return research.context;
+      });
+    } else if (isMatchArticle && spec.typeId === 'review') {
+      // Reviews still use the old pipeline (Perplexity + reference sites)
+      addLog('[' + spec.team + '] Step 1/6: Researching last match...');
       researchPromise = Promise.all([
         preResearchMatch(spec.team, spec.typeId),
         fetchReferenceSites(spec.team, spec.typeId)
       ]).then(function(parallel) {
         var research = parallel[0];
         var refData = parallel[1];
-        if (research) addLog('[' + spec.team + '] Fixture research complete', 'ok');
-        if (refData) addLog('[' + spec.team + '] Reference sites loaded (injuries/lineups/TV)', 'ok');
-        addLog('[' + spec.team + '] Step 2/6: Fetching match statistics...');
         return delay(2000).then(function() {
           return fetchMatchStats(spec.team, spec.typeId, research || '');
         }).then(function(stats) {
-          if (stats) addLog('[' + spec.team + '] Statistics complete', 'ok');
           return [research, stats].filter(Boolean).join('\n\n---\n\n')
-            + (refData ? '\n\n=== REFERENCE DATA (premierinjuries.com / rotowire.com / live-footballontv.com) ===\n' + refData : '');
+            + (refData ? '\n\n=== REFERENCE DATA ===\n' + refData : '');
         });
       });
     } else {
@@ -3742,27 +3934,32 @@ function generateFromCustom() {
   if (matchTypeId && club) {
     addLog('Match article: ' + club + ' — ' + category + (CURRENT_WL ? ' [White Label]' : ''));
     showPipeline(pipelineEl, 'research');
-    addLog('Step 1/6: Researching ' + (matchTypeId === 'preview' ? 'next fixture' : 'last match') + ' for ' + club + '...');
-
-    // Perplexity research AND reference site scraping run in PARALLEL
-    Promise.all([
-      preResearchMatch(club, matchTypeId),
-      fetchReferenceSites(club, matchTypeId)
-    ]).then(function(parallel) {
-        var research = parallel[0];
-        var refData = parallel[1];
-        if (research) addLog('Research complete', 'ok');
-        if (refData) addLog('Reference sites loaded (injuries/lineups/TV)', 'ok');
-        showPipeline(pipelineEl, 'analyse');
-        addLog('Step 2/6: Fetching match statistics from stats sites...');
+    // Use structured research for previews, legacy for reviews
+    var matchResearchPromise;
+    if (matchTypeId === 'preview') {
+      matchResearchPromise = researchMatchPreview(club).then(function(research) {
+        if (research.abort) {
+          addLog('[Research] ABORTED: ' + research.reason, 'err');
+          return '';
+        }
+        if (research.opponent) spec.title = club + ' vs ' + research.opponent + ': ' + (research.fixture.competition || 'League Two') + ' Preview';
+        return research.context;
+      });
+    } else {
+      addLog('Step 1/6: Researching last match for ' + club + '...');
+      matchResearchPromise = Promise.all([
+        preResearchMatch(club, matchTypeId),
+        fetchReferenceSites(club, matchTypeId)
+      ]).then(function(parallel) {
         return delay(2000).then(function() {
-          return fetchMatchStats(club, matchTypeId, research || '');
+          return fetchMatchStats(club, matchTypeId, parallel[0] || '');
         }).then(function(stats) {
-          if (stats) addLog('Statistics complete', 'ok');
-          return [research, stats].filter(Boolean).join('\n\n---\n\n')
-            + (refData ? '\n\n=== REFERENCE DATA (premierinjuries.com / rotowire.com / live-footballontv.com) ===\n' + refData : '');
+          return [parallel[0], stats].filter(Boolean).join('\n\n---\n\n')
+            + (parallel[1] ? '\n\n=== REFERENCE DATA ===\n' + parallel[1] : '');
         });
-      })
+      });
+    }
+    matchResearchPromise
       .then(function(matchContext) {
         showPipeline(pipelineEl, 'write');
         addLog('Step 3/6: Writing article from verified research...');
