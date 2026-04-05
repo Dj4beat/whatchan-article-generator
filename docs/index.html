@@ -4798,17 +4798,42 @@ function scoreArticle(articleHtml, researchContext) {
     + '10. HTML_COMPLIANCE: Pure HTML, no markdown, correct structure? (1=broken, 5=some issues, 10=perfect)\n\n'
     + 'Return ONLY a JSON object (no markdown): {"scores":{"PLAYER_NAMES":X,"TV_BROADCAST":X,"LEAGUE_POSITIONS":X,"STAKES":X,"REPORT_USAGE":X,"RUN_IN":X,"NO_FABRICATION":X,"TACTICAL_MATCHUPS":X,"WRITING_QUALITY":X,"HTML_COMPLIANCE":X},"total":XX,"notes":"brief summary"}';
 
-  return callFreeLLM(
-    'You are a sports journalism quality evaluator. Score the article strictly against the criteria. Be harsh — generic content scores low.',
-    prompt, 800
-  ).then(function(raw) {
+  var evalSystem = 'You are a sports journalism quality evaluator. Score the article strictly against the criteria. Be harsh — generic content that ignores specific data in the research should score very low. Output ONLY valid JSON.';
+
+  function parseScore(raw) {
     var clean = raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
     var s = clean.indexOf('{');
     var e = clean.lastIndexOf('}');
     if (s >= 0 && e > s) return JSON.parse(clean.slice(s, e + 1));
-    return { scores: {}, total: 0, notes: 'Failed to parse score' };
-  }).catch(function() {
-    return { scores: {}, total: 0, notes: 'Scoring failed' };
+    return null;
+  }
+
+  // Use TWO evaluators and average their scores for reliability
+  return Promise.all([
+    callFreeLLM(evalSystem, prompt, 800).then(parseScore).catch(function() { return null; }),
+    callModel('anthropic/claude-sonnet-4', evalSystem, prompt, 800).then(parseScore).catch(function() { return null; })
+  ]).then(function(results) {
+    var score1 = results[0];
+    var score2 = results[1];
+
+    // Average the scores from both evaluators
+    var merged = { scores: {}, total: 0, notes: '' };
+    var criteria = ['PLAYER_NAMES','TV_BROADCAST','LEAGUE_POSITIONS','STAKES','REPORT_USAGE','RUN_IN','NO_FABRICATION','TACTICAL_MATCHUPS','WRITING_QUALITY','HTML_COMPLIANCE'];
+    var total = 0;
+    criteria.forEach(function(c) {
+      var v1 = (score1 && score1.scores && score1.scores[c]) ? score1.scores[c] : 0;
+      var v2 = (score2 && score2.scores && score2.scores[c]) ? score2.scores[c] : 0;
+      var count = (v1 > 0 ? 1 : 0) + (v2 > 0 ? 1 : 0);
+      merged.scores[c] = count > 0 ? Math.round((v1 + v2) / count) : 0;
+      total += merged.scores[c];
+    });
+    merged.total = total;
+    merged.notes = [
+      score1 ? 'Gemini: ' + (score1.notes || '').slice(0, 80) : '',
+      score2 ? 'Sonnet: ' + (score2.notes || '').slice(0, 80) : ''
+    ].filter(Boolean).join(' | ');
+
+    return merged;
   });
 }
 
