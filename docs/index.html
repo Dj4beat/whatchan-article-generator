@@ -1530,50 +1530,32 @@ function fetchInfographicData() {
   var status = document.getElementById('infographic-status');
   var url = (input ? input.value : '').trim();
   if (!url) { if (status) status.textContent = 'Paste a stats URL first.'; return; }
-  if (status) status.innerHTML = '<span style="color:#a78bfa;">&#9889; Infographic Agent working — Perplexity reading stats page...</span>';
-  addLog('[Infographic Agent] Sending Perplexity to: ' + url);
+  if (status) status.innerHTML = '<span style="color:#a78bfa;">&#9889; Extracting stats from BBC page data...</span>';
+  addLog('[Infographic Agent] Fetching BBC page: ' + url);
 
-  // ONE call to Perplexity — visit the specific page, extract stats, return JSON
-  var prompt = 'CRITICAL: You must visit this EXACT URL and read the match statistics from THIS specific page:\n'
-    + url + '\n\n'
-    + 'DO NOT use cached knowledge or guess which match this is. Navigate to the URL above and extract the data shown ON THAT PAGE.\n\n'
-    + 'Return a JSON object. Output ONLY the JSON — no text before or after, no markdown backticks:\n'
-    + '{"homeTeam":"Home Team Name","awayTeam":"Away Team Name","score":"2-1","competition":"League Name","date":"5 April 2026","venue":"Stadium Name","stats":[{"label":"Possession","home":"62%","away":"38%"},{"label":"Shots","home":"15","away":"8"},{"label":"Shots on Target","home":"6","away":"3"},{"label":"xG","home":"1.89","away":"0.74"},{"label":"Corners","home":"7","away":"3"},{"label":"Fouls","home":"12","away":"9"},{"label":"Yellow Cards","home":"2","away":"3"},{"label":"Passes","home":"487","away":"312"},{"label":"Pass Accuracy","home":"86%","away":"73%"},{"label":"Tackles","home":"14","away":"21"},{"label":"Saves","home":"2","away":"5"},{"label":"Offsides","home":"1","away":"3"}]}\n\n'
-    + 'Rules:\n'
-    + '- You MUST read this exact URL — do NOT return stats from a different match\n'
-    + '- Include every stat visible on the page. Never invent numbers.\n'
-    + '- homeTeam is the team listed FIRST or on the LEFT on the page\n'
-    + '- Values are strings like "15" or "62%"';
-
-  callModel(
-    RESEARCH_MODEL,
-    'You are a match stats extractor with live web access. You MUST visit the specific URL provided and extract ONLY the statistics shown on THAT page. Do not use cached data or guess the match. Navigate to the exact URL, read the match stats section, and return a JSON object.',
-    prompt, 2000
-  )
-  .then(function(raw) {
-    addLog('[Infographic Agent] Perplexity responded (' + raw.length + ' chars)');
-    // Parse JSON from the response
-    var clean = raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
-    var s = clean.indexOf('{');
-    var e = clean.lastIndexOf('}');
-    if (s < 0 || e <= s) throw new Error('No JSON found in Perplexity response');
-    var data = JSON.parse(clean.slice(s, e + 1));
-    if (!data.stats || !data.stats.length) throw new Error('JSON has no stats array');
+  // Direct extraction from BBC's __INITIAL_DATA__ JSON — no LLM, no Perplexity, no token cost
+  fetch(PROXY_URL + '/api/match-stats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
+    body: JSON.stringify({ statsUrl: url })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    if (!data.stats || !data.stats.length) throw new Error('No stats found on this page');
     addLog('[Infographic Agent] Parsed: ' + data.homeTeam + ' ' + data.score + ' ' + data.awayTeam + ' (' + data.stats.length + ' stats)');
 
-    // Build the HTML right here — no second LLM call needed
+    // Build visual HTML from the structured JSON — pure JavaScript, no LLM
     var html = renderInfographicHtml(data);
     S.infographicData = { url: url, html: html, statCount: data.stats.length, data: data };
 
-    // Show result with a "Wrong match?" retry option
-    if (status) status.innerHTML = '<span style="color:#86efac;">&#10003; ' + escHtml(data.homeTeam) + ' ' + escHtml(data.score) + ' ' + escHtml(data.awayTeam) + ' (' + data.stats.length + ' stats)</span>'
-      + '&nbsp;&nbsp;<button class="btn btn-ghost sm" style="color:#f87171;font-size:.72rem;padding:2px 8px;" onclick="S.infographicData=null;document.getElementById(\'infographic-status\').textContent=\'Cleared — try again or paste a different URL\';addLog(\'[Infographic Agent] Infographic cleared by user\',\'warn\');">Wrong match? Clear</button>';
-    addLog('[Infographic Agent] Infographic HTML built and ready', 'ok');
+    if (status) status.innerHTML = '<span style="color:#86efac;">&#10003; ' + escHtml(data.homeTeam) + ' ' + escHtml(data.score) + ' ' + escHtml(data.awayTeam) + ' (' + data.stats.length + ' stats)</span>';
+    addLog('[Infographic Agent] Infographic ready — zero tokens used', 'ok');
   })
   .catch(function(err) {
     S.infographicData = null;
     addLog('[Infographic Agent] FAILED: ' + err.message, 'err');
-    if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + err.message + '</span>';
+    if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + err.message + '. Only BBC Sport match pages supported.</span>';
   });
 }
 
