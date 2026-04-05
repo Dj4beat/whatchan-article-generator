@@ -7,6 +7,42 @@ Each entry below documents **all knock-on effects** — not just what changed in
 
 ---
 
+## v2.2 — 5 April 2026
+
+**Tag:** `v2.2`
+**Summary:** Match infographics generated from pasted stats URLs (BBC Sport, WhoScored, ESPN).
+
+### What changed
+
+| Area | Change | Files affected |
+|------|--------|---------------|
+| **Infographic CSS** | New `.wc-infographic` class system: dark gradient background, comparison bars (blue home / red away), form guide pills (W/D/L), H2H result rows, responsive mobile layout | `docs/index.html` (article CSS block) |
+| **UI controls** | "Include Infographics" checkbox with URL input field and "Fetch Stats" button | `docs/index.html` (after White Label bar) |
+| **Stats fetching** | `fetchInfographicData()` uses existing `/api/fetch-article` worker route to extract stats page text | `docs/index.html` |
+| **Infographic builder** | `buildInfographic(statsText, spec)` uses FREE_MODEL to parse stats and generate structured HTML with exact bar width calculations | `docs/index.html` |
+| **Article insertion** | `insertInfographic()` places infographic at article midpoint (mirrors `insertMidBanner` pattern) | `docs/index.html` |
+| **Pipeline wiring** | All 3 pipelines (news feed, evergreen, custom) build infographic before `buildWpBlock` when `S.infographicData` is set | `docs/index.html` (3 pipeline locations) |
+| **State** | `S.infographicData` added to app state | `docs/index.html` |
+
+### Knock-on effects
+
+1. **No worker changes needed** — uses existing `/api/fetch-article` route
+2. **No KV changes** — infographic data is not persisted
+3. **Frontend only** — just `git push` is enough, no worker redeployment
+4. **CSS is inline** — infographic styles are included in the article's inline CSS block, so they work in WordPress without any theme changes
+5. **Infographic is optional** — only generated when checkbox is ticked AND stats have been fetched
+
+### How to verify
+
+1. Tick "Include Infographics" checkbox in the control bar
+2. Paste a BBC Sport match stats URL (e.g. `https://www.bbc.com/sport/football/live/...#MatchStats`)
+3. Click "Fetch Stats" — status should show green tick with character count
+4. Generate any article (Match Report works best)
+5. Preview should show dark-themed stat comparison bars at the article midpoint
+6. Copy HTML → paste into WordPress → verify infographic renders correctly
+
+---
+
 ## v2.1 — 5 April 2026
 
 **Tag:** `v2.1`
