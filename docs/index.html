@@ -2483,7 +2483,10 @@ function hallucinationScan(articleHtml, sourceText, trustedContext) {
     + '- GENERIC FILLER: Sentences that contain NO specific fact (no name, no number, no date, no score) and could apply to literally any match — critical. Examples: "both teams will be looking to put on a strong performance", "the midfield is expected to be a key area of contention", "the outcome often hinges on tactical discipline". These must be flagged for removal.\n'
     + '- FABRICATED QUOTES: Any pullquote or inline quote attributed to someone where the exact words are NOT in the source — critical\n'
     + '- INVENTED BYLINE: Any author name, analyst name, or byline that is NOT "Adrian Dane" (unless White Label mode specifies a different author). Names like "Jack Davies", "Sarah Mitchell", "Tom Wilson" etc. are INVENTED and must be flagged as critical — the ONLY permitted author is Adrian Dane.\n'
-    + '- STALE FIXTURE: If the article claims to be a "match preview" or "upcoming fixture" but the match date is BEFORE today (' + TODAY_STR + '), the research returned old data. This is a CRITICAL failure — a preview of a past game is worthless.\n\n'
+    + '- STALE FIXTURE: If the article claims to be a "match preview" but the match date is BEFORE today (' + TODAY_STR + '), CRITICAL failure.\n'
+    + '- FABRICATED RESULT: Any match scoreline (e.g. "Team A 2-2 Team B") that is NOT in the source context. Models frequently invent plausible-sounding results. If a score is not in the source, flag it as critical.\n'
+    + '- FABRICATED SOURCE ATTRIBUTION: Claims like "according to SofaScore", "as per ESPN data", "WhoScored analysis shows" where that data point is NOT in the source context. Fabricating source attributions to make invented data look credible is a critical failure.\n'
+    + '- WRONG LEAGUE POSITION: Any league table position stated in the article that differs from what is in the source, or is stated when the source does not mention it at all.\n\n'
     + 'Do NOT flag: specific tactical analysis naming real players, historical facts framed as historical, opinion clearly framed as opinion, predictions based on stated evidence.\n\n'
     + 'Return ONLY a JSON object (no markdown):\n'
     + '{\n'
@@ -2987,13 +2990,17 @@ function runEgGenerate() {
         addLog('[' + spec.team + '] ' + stepLabel + ': Writing article...');
         var writePrompt = buildPrompt(spec, matchContext || '', articleLength, '');
         if (matchContext) {
-          writePrompt += '\n\nCRITICAL ACCURACY RULES:\n'
-            + '1. Use ONLY the research data above for all match facts — scores, dates, fixtures, managers, injuries, lineups, TV channels. Never use training knowledge for time-sensitive claims.\n'
-            + '2. If REFERENCE DATA is provided (from premierinjuries.com, rotowire.com, live-footballontv.com), treat it as authoritative for injuries, expected lineups, and broadcast details.\n'
-            + '3. EVERY SENTENCE must contain at least one specific fact (a name, a number, a date, a score). Delete any sentence that could apply to any match between any two teams.\n'
-            + '4. If a section has no real data in the research, OMIT THAT SECTION ENTIRELY. A shorter article with real facts beats a longer article with filler.\n'
-            + '5. Quotes must be REAL — exact words from real people found in the research. If no quotes exist, use a strong stat as the pullquote instead. NEVER fabricate quotes.\n'
-            + '6. For "How to Watch" — use the EXACT channel name and kick-off time from the research/reference data. If not confirmed, write one sentence directing readers to live-footballontv.com.';
+          writePrompt += '\n\nCRITICAL ACCURACY RULES — VIOLATION OF ANY RULE IS AN AUTOMATIC REJECTION:\n'
+            + '1. Use ONLY the research data above for ALL facts. Your training knowledge is WRONG for current data. Do NOT use it.\n'
+            + '2. LEAGUE POSITION: Only state a league position if the EXACT number appears in the research. If the research says "10th", write "10th". If it does not mention league position, DO NOT GUESS — omit it.\n'
+            + '3. MATCH RESULTS: Only state a score if the EXACT scoreline appears in the research. If it is not there, the result DOES NOT EXIST. Do NOT invent results like "2-2 draw vs Manchester United" — if it is not in the research, it never happened.\n'
+            + '4. FORM GUIDE: Only list results that appear VERBATIM in the research. If the research has 3 results, list 3. Do NOT pad with results from your training data.\n'
+            + '5. SOURCE ATTRIBUTIONS: Do NOT write "according to SofaScore", "as per ESPN", "WhoScored analysis shows" unless that exact data point came from the research above. Fabricating source attributions is the worst kind of hallucination.\n'
+            + '6. EMPTY SECTIONS: If the research has no data for a section (injuries, H2H, form), OMIT THE ENTIRE SECTION. Write nothing. A 500-word article with 5 real facts is infinitely better than a 2000-word article with fabricated data.\n'
+            + '7. Quotes must be REAL — found in the research. If none exist, use a stat from the research as a pullquote.\n'
+            + '8. For "How to Watch" — use EXACT data from research or write one sentence directing to live-footballontv.com.\n'
+            + '9. NEVER use the phrase "according to" or "as per" or "as noted by" followed by a source name unless that source is IN the research data above.\n'
+            + '10. If in doubt: LEAVE IT OUT. Silence is better than fabrication.';
         }
         return delay(1500).then(function() {
           return callLLM(getSystemPrompt(), writePrompt, baseTokens);
@@ -3761,13 +3768,17 @@ function generateFromCustom() {
         addLog('Step 3/6: Writing article from verified research...');
         var writePrompt = buildPrompt(spec, matchContext || '', articleLength, extra);
         if (matchContext) {
-          writePrompt += '\n\nCRITICAL ACCURACY RULES:\n'
-            + '1. Use ONLY the research data above for all match facts — scores, dates, fixtures, managers, injuries, lineups, TV channels. Never use training knowledge for time-sensitive claims.\n'
-            + '2. If REFERENCE DATA is provided (from premierinjuries.com, rotowire.com, live-footballontv.com), treat it as authoritative for injuries, expected lineups, and broadcast details.\n'
-            + '3. EVERY SENTENCE must contain at least one specific fact (a name, a number, a date, a score). Delete any sentence that could apply to any match between any two teams.\n'
-            + '4. If a section has no real data in the research, OMIT THAT SECTION ENTIRELY. A shorter article with real facts beats a longer article with filler.\n'
-            + '5. Quotes must be REAL — exact words from real people found in the research. If no quotes exist, use a strong stat as the pullquote instead. NEVER fabricate quotes.\n'
-            + '6. For "How to Watch" — use the EXACT channel name and kick-off time from the research/reference data. If not confirmed, write one sentence directing readers to live-footballontv.com.';
+          writePrompt += '\n\nCRITICAL ACCURACY RULES — VIOLATION OF ANY RULE IS AN AUTOMATIC REJECTION:\n'
+            + '1. Use ONLY the research data above for ALL facts. Your training knowledge is WRONG for current data. Do NOT use it.\n'
+            + '2. LEAGUE POSITION: Only state a league position if the EXACT number appears in the research. If the research says "10th", write "10th". If it does not mention league position, DO NOT GUESS — omit it.\n'
+            + '3. MATCH RESULTS: Only state a score if the EXACT scoreline appears in the research. If it is not there, the result DOES NOT EXIST. Do NOT invent results like "2-2 draw vs Manchester United" — if it is not in the research, it never happened.\n'
+            + '4. FORM GUIDE: Only list results that appear VERBATIM in the research. If the research has 3 results, list 3. Do NOT pad with results from your training data.\n'
+            + '5. SOURCE ATTRIBUTIONS: Do NOT write "according to SofaScore", "as per ESPN", "WhoScored analysis shows" unless that exact data point came from the research above. Fabricating source attributions is the worst kind of hallucination.\n'
+            + '6. EMPTY SECTIONS: If the research has no data for a section (injuries, H2H, form), OMIT THE ENTIRE SECTION. Write nothing. A 500-word article with 5 real facts is infinitely better than a 2000-word article with fabricated data.\n'
+            + '7. Quotes must be REAL — found in the research. If none exist, use a stat from the research as a pullquote.\n'
+            + '8. For "How to Watch" — use EXACT data from research or write one sentence directing to live-footballontv.com.\n'
+            + '9. NEVER use the phrase "according to" or "as per" or "as noted by" followed by a source name unless that source is IN the research data above.\n'
+            + '10. If in doubt: LEAVE IT OUT. Silence is better than fabrication.';
         }
         return delay(1500).then(function() {
           return callLLM(getSystemPrompt(), writePrompt, baseTokens);
