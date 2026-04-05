@@ -453,6 +453,22 @@
     </div>
   </div>
 
+  <!-- ── Infographic bar ── -->
+  <div class="wl-bar" style="border-color:#7c3aed33;">
+    <label class="wl-toggle-label" style="color:#a78bfa;">
+      <input type="checkbox" id="infographic-check" onchange="toggleInfographic()">
+      Include Infographics
+    </label>
+    <div class="wl-options" id="infographic-options">
+      <div class="wl-field" style="flex:1;min-width:280px;">
+        <label>Stats URL <span style="color:#334155;font-weight:400;">(BBC Sport, WhoScored, ESPN, etc.)</span></label>
+        <input type="text" id="infographic-url" placeholder="https://www.bbc.com/sport/football/live/... or any stats page">
+      </div>
+      <button class="btn btn-ghost sm" onclick="fetchInfographicData()" style="align-self:flex-end;color:#a78bfa;border-color:#7c3aed;">Fetch Stats</button>
+      <span id="infographic-status" style="font-size:.77rem;font-family:system-ui,sans-serif;color:#94a3b8;align-self:flex-end;"></span>
+    </div>
+  </div>
+
   <!-- ════════════ TAB: NEWS FEED ════════════ -->
   <div id="tab-feed" class="tab-panel active">
 
@@ -1080,6 +1096,29 @@ var ART_CSS = '<style>'
   + '.wc-tag{display:inline-block;background:#f5f5f4;color:#78716c;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;border:1px solid #e7e5e4;text-decoration:none;transition:background .2s,color .2s}'
   + '.wc-tag:hover{background:#1d4ed8;color:#fff;border-color:#1d4ed8}'
   + '.wc-sources{font-size:14px;color:#78716c;font-style:italic;margin-top:28px}'
+  // ── Infographic styles ──
+  + '.wc-infographic{background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:14px;padding:28px 24px;margin:36px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.3)}'
+  + '.wc-infographic-title{text-align:center;font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#f59e0b;margin-bottom:20px}'
+  + '.wc-match-score{text-align:center;margin-bottom:24px}'
+  + '.wc-match-score .wc-ms-teams{display:flex;justify-content:center;align-items:center;gap:16px;font-size:22px;font-weight:700;color:#f0f6fc}'
+  + '.wc-match-score .wc-ms-vs{font-size:30px;font-weight:800;color:#f59e0b;min-width:60px;text-align:center}'
+  + '.wc-match-score .wc-ms-meta{font-size:12px;color:#64748b;margin-top:6px}'
+  + '.wc-stat-row{display:flex;align-items:center;gap:10px;margin-bottom:14px}'
+  + '.wc-stat-row .wc-sr-label{flex:0 0 110px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;text-align:center}'
+  + '.wc-stat-row .wc-sr-val{font-size:15px;font-weight:700;color:#f0f6fc;min-width:36px;text-align:center}'
+  + '.wc-stat-row .wc-sr-bar-wrap{flex:1;height:10px;background:#1e293b;border-radius:5px;overflow:hidden;display:flex}'
+  + '.wc-sr-bar-home{background:linear-gradient(90deg,#3b82f6,#60a5fa);height:100%;border-radius:5px 0 0 5px;transition:width .3s}'
+  + '.wc-sr-bar-away{background:linear-gradient(90deg,#ef4444,#f87171);height:100%;border-radius:0 5px 5px 0;transition:width .3s}'
+  + '.wc-form-strip{display:flex;justify-content:center;gap:5px;margin:8px 0}'
+  + '.wc-form-pill{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff}'
+  + '.wc-form-W{background:#16a34a}.wc-form-D{background:#d97706}.wc-form-L{background:#dc2626}'
+  + '.wc-h2h-block{margin-top:20px;border-top:1px solid #334155;padding-top:16px}'
+  + '.wc-h2h-block .wc-h2h-title{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#f59e0b;margin-bottom:10px;text-align:center}'
+  + '.wc-h2h-result{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;background:#0f172a;border-radius:6px;margin-bottom:4px;font-size:13px}'
+  + '.wc-h2h-result .wc-h2h-date{color:#64748b;flex:0 0 90px}'
+  + '.wc-h2h-result .wc-h2h-score{font-weight:700;color:#f0f6fc;text-align:center;flex:1}'
+  + '.wc-h2h-result .wc-h2h-comp{color:#64748b;flex:0 0 60px;text-align:right;font-size:11px}'
+  + '@media(max-width:600px){.wc-infographic{padding:18px 14px}.wc-match-score .wc-ms-teams{font-size:16px;gap:8px}.wc-match-score .wc-ms-vs{font-size:22px;min-width:40px}.wc-stat-row .wc-sr-label{flex:0 0 70px;font-size:10px}.wc-stat-row .wc-sr-val{font-size:13px;min-width:28px}}'
   + '@media(max-width:600px){.wc-post h2{font-size:23px}.wc-pullquote{font-size:18px;padding:20px}}'
   + '</style>';
 
@@ -1329,6 +1368,7 @@ var S = {
   feedFilter:     'all',
   selectedFeedIdx: -1,
   feedbackMemory:  [],
+  infographicData: null,
   urlSource:      null,    // { title, text, url }
   uploadedContext: {},      // key -> { name, text }
 };
@@ -1470,6 +1510,119 @@ function toggleWl() {
   var opts = document.getElementById('wl-options');
   var cb   = document.getElementById('wl-active');
   if (opts) opts.classList.toggle('vis', cb && cb.checked);
+}
+
+function toggleInfographic() {
+  var opts = document.getElementById('infographic-options');
+  var cb   = document.getElementById('infographic-check');
+  if (opts) opts.classList.toggle('vis', cb && cb.checked);
+  if (!cb || !cb.checked) S.infographicData = null;
+}
+
+function fetchInfographicData() {
+  var input = document.getElementById('infographic-url');
+  var status = document.getElementById('infographic-status');
+  var url = (input ? input.value : '').trim();
+  if (!url) { if (status) status.textContent = 'Paste a stats URL first.'; return; }
+  if (status) status.textContent = 'Fetching stats page...';
+  fetch(PROXY_URL + '/api/fetch-article', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-WC-Token': WC_TOKEN },
+    body: JSON.stringify({ articleUrl: url })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) throw new Error(data.error);
+    var text = data.text || '';
+    if (text.length < 30) throw new Error('No usable stats extracted');
+    S.infographicData = { url: url, text: text, title: data.title || url };
+    if (status) status.innerHTML = '<span style="color:#a78bfa;">&#10003; Stats loaded: ' + escHtml((data.title || url).slice(0, 60)) + ' (' + text.length + ' chars)</span>';
+    addLog('Infographic stats fetched: ' + text.length + ' chars', 'ok');
+  })
+  .catch(function(e) {
+    S.infographicData = null;
+    if (status) status.innerHTML = '<span style="color:#f87171;">Failed: ' + e.message + '</span>';
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INFOGRAPHIC BUILDER — generates visual HTML from stats data
+// ═══════════════════════════════════════════════════════════════
+function buildInfographic(statsText, spec) {
+  var team = spec.team || '';
+  var prompt = 'You are a sports infographic designer. Create a visually structured HTML infographic from the match stats data below.\n\n'
+    + '=== STATS DATA ===\n' + (statsText || '').slice(0, 4000) + '\n=== END ===\n\n'
+    + 'RULES:\n'
+    + '- Use ONLY data found in the stats above. NEVER invent any number.\n'
+    + '- If a stat is not available, OMIT that row entirely. Do not write "N/A".\n'
+    + '- Output ONLY the HTML. No markdown, no explanation.\n\n'
+    + 'REQUIRED HTML STRUCTURE (use these exact class names):\n\n'
+    + '<div class="wc-infographic">\n'
+    + '  <div class="wc-infographic-title">MATCH STATISTICS</div>\n\n'
+    + '  <!-- Match score header -->\n'
+    + '  <div class="wc-match-score">\n'
+    + '    <div class="wc-ms-teams"><span>[HOME TEAM]</span><span class="wc-ms-vs">[SCORE]</span><span>[AWAY TEAM]</span></div>\n'
+    + '    <div class="wc-ms-meta">[Competition] &middot; [Date] &middot; [Venue]</div>\n'
+    + '  </div>\n\n'
+    + '  <!-- Stat comparison bars — one row per stat. Width % must be calculated from the values. -->\n'
+    + '  <!-- Example for possession 62% vs 38%: -->\n'
+    + '  <div class="wc-stat-row">\n'
+    + '    <div class="wc-sr-val">62%</div>\n'
+    + '    <div class="wc-sr-bar-wrap"><div class="wc-sr-bar-home" style="width:62%"></div><div class="wc-sr-bar-away" style="width:38%"></div></div>\n'
+    + '    <div class="wc-sr-val">38%</div>\n'
+    + '  </div>\n'
+    + '  <div class="wc-stat-row"><div class="wc-sr-val"></div><div class="wc-sr-label">Possession</div><div class="wc-sr-val"></div></div>\n\n'
+    + '  <!-- Repeat for: Shots, Shots on Target, xG, Corners, Fouls, Passes, Pass Accuracy -->\n'
+    + '  <!-- For non-percentage stats, calculate proportional widths: e.g. 15 shots vs 8 shots = 65% vs 35% -->\n\n'
+    + '  <!-- Form guide (if available) — last 5 results as coloured circles -->\n'
+    + '  <!-- Use class wc-form-W (green), wc-form-D (amber), wc-form-L (red) -->\n'
+    + '  <!-- <div style="text-align:center;margin-top:16px;"><div style="font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:4px;">[TEAM] FORM</div><div class="wc-form-strip"><span class="wc-form-pill wc-form-W">W</span>...</div></div> -->\n\n'
+    + '  <!-- Head-to-head (if available) -->\n'
+    + '  <!-- <div class="wc-h2h-block"><div class="wc-h2h-title">HEAD TO HEAD</div>\n'
+    + '  <div class="wc-h2h-result"><span class="wc-h2h-date">12 Jan 2026</span><span class="wc-h2h-score">Team A 2-1 Team B</span><span class="wc-h2h-comp">PL</span></div>\n'
+    + '  ... </div> -->\n\n'
+    + '</div>\n\n'
+    + 'IMPORTANT:\n'
+    + '- Calculate bar widths as percentages that sum to 100% for each stat pair\n'
+    + '- For stats like shots (15 vs 8), calculate: home% = 15/(15+8)*100 = 65%, away% = 35%\n'
+    + '- Use inline style="width:XX%" on each bar div\n'
+    + '- Include as many stat rows as the data supports — more data = better infographic\n'
+    + '- Include form guide and H2H ONLY if the data contains them\n'
+    + '- The wc-sr-label row goes BELOW its corresponding bar row (label is centred between the two values)';
+
+  addLog('Building infographic from stats data...');
+  return callFreeLLM(
+    'You are an HTML infographic builder for a sports website. You output only valid HTML using the provided CSS classes. Never invent data — only use what is in the source. Calculate all bar widths as accurate percentages.',
+    prompt, 2500
+  ).then(function(html) {
+    // Clean any markdown wrapping
+    html = html.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
+    // Validate it starts with the infographic div
+    if (html.indexOf('wc-infographic') < 0) {
+      addLog('Infographic: model did not produce valid structure — skipping', 'warn');
+      return '';
+    }
+    addLog('Infographic built successfully', 'ok');
+    return html;
+  }).catch(function(e) {
+    addLog('Infographic build failed: ' + e.message, 'warn');
+    return '';
+  });
+}
+
+// Insert infographic at article midpoint (mirrors insertMidBanner pattern)
+function insertInfographic(bodyHtml, infographicHtml) {
+  if (!infographicHtml) return bodyHtml;
+  var h2positions = [];
+  var re = /<h2[\s>]/gi;
+  var m;
+  while ((m = re.exec(bodyHtml)) !== null) h2positions.push(m.index);
+  if (h2positions.length < 2) return bodyHtml + '\n' + infographicHtml;
+  var mid = bodyHtml.length / 2;
+  var best = h2positions.reduce(function(prev, pos) {
+    return Math.abs(pos - mid) < Math.abs(prev - mid) ? pos : prev;
+  });
+  return bodyHtml.slice(0, best) + '\n<!-- Match Infographic -->\n' + infographicHtml + '\n\n' + bodyHtml.slice(best);
 }
 
 function formatSavedDate(ts) {
@@ -2152,7 +2305,9 @@ function buildWpBlock(spec, body, seo) {
     return bodyHtml.slice(0, best) + '\n<!-- Sport TV Banner -->\n' + bannerHtml + '\n\n' + bodyHtml.slice(best);
   }
 
-  var bodyWithBanner = insertMidBanner(body, sportBanner);
+  // Insert infographic at midpoint (if available), then sport banner
+  var bodyWithInfographic = (spec._infographicHtml) ? insertInfographic(body, spec._infographicHtml) : body;
+  var bodyWithBanner = insertMidBanner(bodyWithInfographic, sportBanner);
 
   // Tags HTML
   var tagsArr = seo.tags || spec.keywords;
@@ -2670,23 +2825,30 @@ function runArticlePipeline(opts) {
       });
     })
     .then(function(result) {
-      showPipeline(pipe, 'done');
-      spec.title = result.seo.h1 || spec.title;
-      var wp = buildWpBlock(spec, result.body, result.seo);
-      if (result.needsReview) {
-        addLog('Article complete — REVIEW RECOMMENDED before publishing', 'err');
-      } else {
-        addLog('Step 6/6: Article complete', 'ok');
-      }
-      S.generated.push({
-        spec: spec, wp: wp, seo: result.seo, status: 'done',
-        articleLength: articleLength, qc: result.qc,
-        wasRewritten: result.wasRewritten, eeatPolished: true,
-        needsReview: result.needsReview, model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
-      });
+      // Build infographic if user ticked the checkbox and fetched stats
+      var infographicPromise = (S.infographicData && S.infographicData.text)
+        ? buildInfographic(S.infographicData.text, spec)
+        : Promise.resolve('');
+      return infographicPromise.then(function(infHtml) {
+        spec._infographicHtml = infHtml;
+        showPipeline(pipe, 'done');
+        spec.title = result.seo.h1 || spec.title;
+        var wp = buildWpBlock(spec, result.body, result.seo);
+        if (result.needsReview) {
+          addLog('Article complete — REVIEW RECOMMENDED before publishing', 'err');
+        } else {
+          addLog('Step 6/6: Article complete', 'ok');
+        }
+        S.generated.push({
+          spec: spec, wp: wp, seo: result.seo, status: 'done',
+          articleLength: articleLength, qc: result.qc,
+          wasRewritten: result.wasRewritten, eeatPolished: true,
+          needsReview: result.needsReview, model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
+        });
       saveArticles();
       document.getElementById('gen-count').textContent = S.generated.length;
       renderGenList();
+      }); // end infographicPromise.then
     })
     .catch(function(e) {
       showPipeline(pipe, 'error');
@@ -2852,20 +3014,25 @@ function runEgGenerate() {
           .catch(function() { return r; });
       })
       .then(function(result) {
-        spec.title = result.seo.h1 || spec.title;
-        var wp = buildWpBlock(spec, result.body, result.seo);
-        S.generated.push({
-          spec: spec, wp: wp, seo: result.seo, status: 'done',
-          articleLength: articleLength, qc: result.qc,
-          needsReview: result.needsRetryReview || result.hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
-          matchContext: (result.matchContext || '').slice(0, 3000),
-          wasRewritten: result.wasRewritten || false, eeatPolished: true,
-          model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
-        });
-        saveArticles();
-        document.getElementById('gen-count').textContent = S.generated.length;
-        addLog('Done: ' + spec.title, 'ok');
-        renderGenList();
+        var infP = (S.infographicData && S.infographicData.text)
+          ? buildInfographic(S.infographicData.text, spec) : Promise.resolve('');
+        return infP.then(function(infHtml) {
+          spec._infographicHtml = infHtml;
+          spec.title = result.seo.h1 || spec.title;
+          var wp = buildWpBlock(spec, result.body, result.seo);
+          S.generated.push({
+            spec: spec, wp: wp, seo: result.seo, status: 'done',
+            articleLength: articleLength, qc: result.qc,
+            needsReview: result.needsRetryReview || result.hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
+            matchContext: (result.matchContext || '').slice(0, 3000),
+            wasRewritten: result.wasRewritten || false, eeatPolished: true,
+            model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
+          });
+          saveArticles();
+          document.getElementById('gen-count').textContent = S.generated.length;
+          addLog('Done: ' + spec.title, 'ok');
+          renderGenList();
+        }); // end infP.then
       })
       .catch(function(e) {
         addLog('Failed: ' + spec.title + ' — ' + e.message, 'err');
@@ -3502,21 +3669,26 @@ function generateFromCustom() {
 
   // Shared finish + cleanup helpers used by both pipelines
   function finish(result, hadHallucinations) {
-    showPipeline(pipelineEl, 'done');
-    spec.title = result.seo.h1 || spec.title;
-    var wp = buildWpBlock(spec, result.body, result.seo);
-    S.generated.push({
-      spec: spec, wp: wp, seo: result.seo, status: 'done',
-      articleLength: articleLength, qc: result.qc,
-      needsReview: result.needsRetryReview || hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
-      wasRewritten: result.wasRewritten || false, eeatPolished: true,
-      matchContext: (result.matchContext || '').slice(0, 3000),
-      model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
+    var infP = (S.infographicData && S.infographicData.text)
+      ? buildInfographic(S.infographicData.text, spec) : Promise.resolve('');
+    infP.then(function(infHtml) {
+      spec._infographicHtml = infHtml;
+      showPipeline(pipelineEl, 'done');
+      spec.title = result.seo.h1 || spec.title;
+      var wp = buildWpBlock(spec, result.body, result.seo);
+      S.generated.push({
+        spec: spec, wp: wp, seo: result.seo, status: 'done',
+        articleLength: articleLength, qc: result.qc,
+        needsReview: result.needsRetryReview || hadHallucinations || (result.qc && result.qc.verdict === 'FAIL'),
+        wasRewritten: result.wasRewritten || false, eeatPolished: true,
+        matchContext: (result.matchContext || '').slice(0, 3000),
+        model: ACTIVE_MODEL, savedAt: Date.now(), wlOptions: CURRENT_WL
+      });
+      saveArticles();
+      document.getElementById('gen-count').textContent = S.generated.length;
+      addLog('Custom article complete: ' + spec.title, 'ok');
+      renderGenList();
     });
-    saveArticles();
-    document.getElementById('gen-count').textContent = S.generated.length;
-    addLog('Custom article complete: ' + spec.title, 'ok');
-    renderGenList();
   }
   function cleanup() {
     S.generating = false;
