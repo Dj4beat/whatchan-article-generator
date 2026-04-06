@@ -1479,19 +1479,22 @@ function writeMatchPreviewSections(researchContext, spec, modelId) {
 
   // ── SECTION 1: Editor's Note + Opening + Stats ──
   addLog('[Writer] Section 1/4: Opening — fixture, players, stakes...');
-  var s1 = 'Write the OPENING of a match preview.\n\n'
+  var s1 = 'Write the OPENING SECTION of a match preview.\n\n'
     + '=== FULL RESEARCH DATA ===\n' + rc.slice(0, 6000) + '\n=== END ===\n\n'
-    + 'YOUR TASK — write ONLY these elements:\n'
-    + '1. Editor\'s Note: <div class="wc-editors-note"><div class="wc-editors-note-label">Editor\'s Note</div><p>2-3 sentence summary.</p></div>\n'
-    + '2. H1 headline with both team names\n'
-    + '3. Byline: "By ' + AUTHOR.name + ', WhatChan Chief Football Analyst"\n'
-    + '4. 3 opening paragraphs that MUST include ALL of these:\n'
-    + '   a) Both teams\' EXACT league positions and points (from the Perplexity data)\n'
-    + '   b) What each team is playing for (promotion, play-offs, survival, mid-table)\n'
-    + '   c) NAMES of players who scored/performed in the last matches — read the BBC match reports in the data and extract SPECIFIC player names and what they did\n'
-    + '   d) The contrast between both teams\' Good Friday results\n'
-    + '5. Stats strip: <div class="wc-stats-strip"> with 4 stat cards using REAL numbers from the data\n\n'
-    + 'CRITICAL: If the match reports mention "Tobias Brennan curled in a shot" — write "Brennan" in your text. If "Harry McKirdy scored a double" — write "McKirdy" in your text. USE THE NAMES.';
+    + 'OUTPUT EXACTLY THIS STRUCTURE (no more, no less):\n\n'
+    + 'ELEMENT 1 — Editor\'s Note (2-3 SENTENCES ONLY — not paragraphs, SENTENCES):\n'
+    + '<div class="wc-editors-note"><div class="wc-editors-note-label">Editor\'s Note</div><p>Two to three SHORT sentences summarising the fixture and why it matters. Maximum 60 words total.</p></div>\n\n'
+    + 'ELEMENT 2 — Headline and byline:\n'
+    + '<h1>Both team names in the headline</h1>\n'
+    + '<p><strong>By ' + AUTHOR.name + ', WhatChan Chief Football Analyst</strong></p>\n\n'
+    + 'ELEMENT 3 — Opening (3 SHORT paragraphs, each wrapped in <p> tags):\n'
+    + 'Paragraph 1: The fixture details + BOTH teams league positions and points + what each team is playing for.\n'
+    + 'Paragraph 2: The contrast — name SPECIFIC PLAYERS from the match reports. Read the BBC reports in the data. If it says "Tobias Brennan curled in a shot" write "Brennan". If "Harry McKirdy scored a double" write "McKirdy". If "Ade Adeyemo" appears, use "Adeyemo". NAME THEM.\n'
+    + 'Paragraph 3: What is at stake for both clubs with the points gaps.\n\n'
+    + 'ELEMENT 4 — Stats strip (use class wc-stat-num NOT wc-stat-number):\n'
+    + '<div class="wc-stats-strip"><div class="wc-stat-card"><div class="wc-stat-num">VALUE</div><div class="wc-stat-label">LABEL</div></div></div>\n'
+    + '4 stat cards with REAL numbers from the data.\n\n'
+    + 'RULES: Keep paragraphs SHORT (3-5 sentences max). No walls of text. Every paragraph must have a <p> tag.';
 
   var p1 = delay(500).then(function() { return callSection(baseSystem, s1, tokenLimit); });
 
@@ -1499,23 +1502,17 @@ function writeMatchPreviewSections(researchContext, spec, modelId) {
   var p2 = p1.then(function(html1) {
     sections.push(cleanMarkdown(html1));
     addLog('[Writer] Section 2/4: Tactical analysis + players + How to Watch...');
-    var s2 = 'Write the MIDDLE sections of a match preview.\n\n'
+    var s2 = 'Write TWO h2 sections for a match preview. Each section MUST start with an <h2> tag.\n\n'
       + '=== FULL RESEARCH DATA ===\n' + rc.slice(0, 6000) + '\n=== END ===\n\n'
-      + 'YOUR TASK — write these h2 sections:\n\n'
-      + 'SECTION A: h2 "Key Players and Tactical Battle"\n'
-      + '- Read the BBC match reports in the data. Find EVERY player mentioned by name.\n'
-      + '- For EACH player, state what they did: who scored, who assisted, who made saves, who got cards, who made errors.\n'
-      + '- You MUST name at least 4 different players across both teams.\n'
-      + '- Identify 2 specific player-vs-player matchups for this fixture.\n'
-      + '- Include a pullquote: <div class="wc-pullquote">"A strong stat from the data"<cite>BBC Sport / WhatChan Analysis</cite></div>\n\n'
-      + 'SECTION B: h2 "How to Watch Crawley Town vs Grimsby Town"\n'
-      + '- THIS SECTION IS MANDATORY. WhatChan is a TV and streaming guide — this is our core content.\n'
-      + '- TV Channel: Sky Sports+ (ALL League Two matches are shown on Sky Sports+)\n'
-      + '- Kick-off: 15:00 BST, Monday 6th April 2026\n'
-      + '- UK streaming: Sky Go app (for Sky subscribers), NOW TV (day pass or monthly)\n'
-      + '- Overseas: iFollow service from each club\n'
-      + '- If the research data mentions any other broadcast info, include it.\n'
-      + '- DO NOT say "broadcast details not confirmed" — they ARE confirmed: Sky Sports+.\n';
+      + 'SECTION 1: <h2>Key Players and Tactical Battle</h2>\n\n'
+      + 'INSTRUCTIONS: Go through the BBC match reports in the research data line by line. Extract EVERY player name mentioned. Then write about them:\n\n'
+      + '- For the Grimsby report: who scored? who conceded? who got sent off? who made errors? Example from the data: "Tobias Brennan curled in a shot" = mention Brennan. "Jack Evans" = mention Evans.\n'
+      + '- For the Crawley report: who scored the goals? "Harry McKirdy scored a double" = mention McKirdy by name and say he scored twice.\n'
+      + '- You MUST name at least 5 different players with what they did.\n'
+      + '- After the player analysis, identify 2 tactical matchups for Monday.\n'
+      + '- Include a pullquote with a real stat: <div class="wc-pullquote">"stat from data"<cite>BBC Sport</cite></div>\n'
+      + '- Keep paragraphs SHORT. Maximum 4 sentences per <p> tag.\n\n'
+      + 'SECTION 2: You do NOT need to write a How to Watch section — it is added automatically. Skip to tactical matchups only.\n';
 
     return delay(2000).then(function() { return callSection(baseSystem, s2, tokenLimit); });
   });
