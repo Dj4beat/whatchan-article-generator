@@ -7,6 +7,49 @@ Each entry below documents **all knock-on effects** — not just what changed in
 
 ---
 
+## v2.4 — 6 April 2026
+
+**Tag:** `v2.4`
+**Summary:** Complete match preview restructure — BBC-sourced research, model evaluation, Claude Sonnet 4 auto-selection, deterministic TV section, section-by-section writer.
+
+### What changed
+
+| Area | Change | Files affected |
+|------|--------|---------------|
+| **BBC team data parser** | `parseBbcTeamData()` extracts fixtures and results from BBC Sport `__INITIAL_DATA__` on team pages | `worker/src/index.js` |
+| **Worker /api/team-data** | New route: accepts `teamSlug`, returns fixtures + results + last match report text | `worker/src/index.js` |
+| **Structured research pipeline** | `researchMatchPreview()` replaces single Perplexity call with multi-step BBC + Perplexity | `docs/index.html` |
+| **Model evaluation** | `runModelEvaluation()` tested 8 models, dual evaluator (Gemini + Sonnet). Sonnet won 73/100. | `docs/index.html` |
+| **Auto model selection** | Match Previews auto-switch to `anthropic/claude-sonnet-4` regardless of dropdown | `docs/index.html` |
+| **Deterministic TV section** | `buildHowToWatchHtml()` in JavaScript — Sky Sports+, Sky Go, NOW TV, iFollow. Never LLM-generated. | `docs/index.html` |
+| **Section-by-section writer** | `writeMatchPreviewSections(ctx, spec, modelId)` — 4 focused LLM calls instead of 1 | `docs/index.html` |
+| **Anti-fabrication rules** | 10-point CRITICAL ACCURACY RULES, fabricated result/source/position hallucination categories | `docs/index.html` |
+| **Date anchoring** | `preResearchMatch()` states today's date; QC checks preview dates are in future | `docs/index.html` |
+| **Auto-title for match articles** | Blank title auto-generates "Team Next Match Month Year: Preview..." | `docs/index.html` |
+| **Paragraph structure** | Editor's Note capped at 60 words, max 4 sentences per paragraph | `docs/index.html` |
+| **Invented byline fix** | `cleanMarkdown()` regex replaces any non-Adrian Dane byline | `docs/index.html` |
+| **Markdown fence fix** | `cleanMarkdown()` strips ` ```html ` wrapping | `docs/index.html` |
+| **`</script>` fix** | Split tag across concatenation to prevent HTML parser breaking | `docs/index.html` |
+
+### Knock-on effects
+
+1. **Worker MUST be redeployed** — new `/api/team-data` route
+2. **Match Previews now cost more per article** — Claude Sonnet 4 (~3p/article) instead of Gemini Flash (~0.1p). Worth it for quality.
+3. **Match Previews ignore the model dropdown** — always use Sonnet 4. The dropdown still controls standard articles.
+4. **"How to Watch" appears twice** if the LLM also generates one. The deterministic version is always correct; the LLM one may duplicate. Minor cosmetic issue.
+5. **Existing articles in localStorage** won't have the new model field — these populate on next generation.
+
+### How to verify
+
+1. Select Grimsby Town + Match Preview → Activity Log should show "[Research] === STARTING STRUCTURED RESEARCH FOR GRIMSBY TOWN ==="
+2. Activity Log should show "Writing with Claude Sonnet 4 (auto-selected for match previews)"
+3. Article should contain specific player names from BBC match reports
+4. "How to Watch" section should appear with Sky Sports+, Sky Go, NOW TV, iFollow
+5. League positions should be stated in the opening paragraphs
+6. No fabricated results or fake source attributions
+
+---
+
 ## v2.3 — 5 April 2026
 
 **Tag:** `v2.3`

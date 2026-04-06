@@ -134,21 +134,36 @@
 
   <!-- ── 5 ── -->
   <h2 id="match-articles">5. Match Preview &amp; Match Report</h2>
-  <p>When you select a club + "Match Previews" or "Match Reports" category, the generator runs a <strong>deep research pipeline</strong> instead of the standard one.</p>
+  <p>When you select a club + &ldquo;Match Previews&rdquo; category, the generator runs a <strong>structured multi-step research pipeline</strong> that collects data from multiple verified sources before writing begins.</p>
 
-  <h3>What gets researched automatically</h3>
+  <div class="card good">
+    <p><span class="label good">AUTO MODEL</span> Match Previews automatically use <strong>Claude Sonnet 4</strong> for writing, regardless of which model you have selected in the dropdown. An evaluation on 5 April 2026 tested 8 models &mdash; Sonnet scored 73/100 vs Gemini Flash&rsquo;s 54/100. It was the only model that consistently named players, included TV data, and followed tactical instructions.</p>
+  </div>
+
+  <h3>What happens when you generate a Match Preview</h3>
+  <p>The research phase collects data from multiple sources &mdash; all automatically, with no manual steps required:</p>
   <table>
-    <tr><th>Source</th><th>Data</th></tr>
-    <tr><td>Perplexity Sonar Pro</td><td>Next fixture / last result, form (both teams), H2H, injuries, managers, TV</td></tr>
-    <tr><td>premierinjuries.com</td><td>PL injury table — player names, injury types, return dates</td></tr>
-    <tr><td>rotowire.com/soccer/lineups.php</td><td>Expected lineups for EPL, UCL, La Liga, Serie A, etc.</td></tr>
-    <tr><td>live-footballontv.com</td><td>UK TV channel, kick-off time, streaming options</td></tr>
-    <tr><td>WhoScored / FootyStats / SoccerStats</td><td>Player ratings, season stats, xG, tactical data</td></tr>
+    <tr><th>Step</th><th>Source</th><th>What it provides</th></tr>
+    <tr><td>1</td><td>BBC Sport team pages</td><td>Confirmed upcoming fixtures and recent results for both teams &mdash; from BBC&rsquo;s own structured data, not AI-guessed</td></tr>
+    <tr><td>2</td><td>BBC match reports</td><td>Full text of both teams&rsquo; last match report. This is the <strong>primary source</strong> for player names, specific events, goals, and context (&ldquo;play-off chasers Grimsby&rdquo;, &ldquo;Harry McKirdy scored a double&rdquo;)</td></tr>
+    <tr><td>3</td><td>Reference sites</td><td>premierinjuries.com (injuries), rotowire.com (lineups), live-footballontv.com (TV listings)</td></tr>
+    <tr><td>4</td><td>Perplexity Sonar Pro</td><td>League table positions, H2H history, managers, top scorers, what&rsquo;s at stake &mdash; focused supplementary data only</td></tr>
   </table>
-  <p>Reference sites are fetched <strong>in parallel</strong> with the Perplexity research for speed.</p>
+
+  <h3>How the article is written</h3>
+  <p>The article is built <strong>section by section</strong> (4 focused AI calls), not as a single prompt. Each section receives the full research data but is given a specific, focused task:</p>
+  <ul>
+    <li><strong>Opening</strong> &mdash; Editor&rsquo;s Note (60 words max), headline, league positions, player names from reports</li>
+    <li><strong>Tactical &amp; Players</strong> &mdash; must name at least 5 players from the match reports with what they did</li>
+    <li><strong>Run-in Analysis</strong> &mdash; all upcoming fixtures listed and difficulty analysed</li>
+    <li><strong>FAQ &amp; Sources</strong> &mdash; 4 Q&amp;As with confirmed data</li>
+  </ul>
+
+  <h3>How to Watch &mdash; always included</h3>
+  <p>The &ldquo;How to Watch&rdquo; section is <strong>built automatically by the system</strong>, not by the AI model. This means it&rsquo;s always correct and never missing. For League Two: <strong>Sky Sports+</strong>, Sky Go, NOW TV, and iFollow (overseas). This is inserted into every match article because WhatChan is a TV and streaming guide &mdash; broadcast information is core content, not an afterthought.</p>
 
   <div class="card warn">
-    <p><span class="label warn">QUALITY RULES</span> Every sentence must contain a specific fact. Generic filler like "both teams will be looking to" is banned. If a section has no real data, it is omitted entirely. Pullquotes must be real quotes from real people, never fabricated.</p>
+    <p><span class="label warn">QUALITY RULES</span> Every sentence must contain a specific fact. Generic filler is banned. If a section has no real data, it is omitted entirely. Player names from match reports must be used. Short paragraphs (max 4 sentences). Stats strip numbers must match the article text.</p>
   </div>
 
   <!-- ── 5b ── -->
@@ -319,6 +334,7 @@ npx wrangler deploy              # Upload the updated code to Cloudflare</pre>
   <div class="card info">
     <p><span class="label info">CURRENT VERSIONS</span></p>
     <ul style="margin-top:8px;">
+      <li><code>v2.4</code> &mdash; Restructured match previews, Claude Sonnet 4 auto-select, deterministic TV, BBC research (6 Apr 2026)</li>
       <li><code>v2.3</code> &mdash; Match infographics, BBC stats parser, feedback loop, auto-retry QC, KV learning (5 Apr 2026)</li>
       <li><code>v2.1</code> &mdash; Feedback loop, auto-retry QC, KV learning, match pipeline, templates (5 Apr 2026)</li>
       <li><code>v2.0</code> &mdash; White Label, DOCX export, persistence, SEO panel (5 Apr 2026)</li>
