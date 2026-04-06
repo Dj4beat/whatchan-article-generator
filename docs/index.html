@@ -1986,43 +1986,12 @@ function buildHowToWatchHtml(spec) {
   var vsMatch = title.match(/vs\s+([^:,]+)/i);
   var opponent = vsMatch ? vsMatch[1].trim() : 'Opponent';
 
-  // Detect competition from spec._competition (set by research pipeline) or from team lookup
-  var comp = (spec._competition || '').toLowerCase();
-
-  // Known league/team mappings for broadcast info
-  var PL_TEAMS = ['Arsenal','Aston Villa','Bournemouth','Brentford','Brighton','Chelsea','Crystal Palace','Everton','Fulham','Ipswich','Leicester City','Liverpool','Manchester City','Manchester United','Newcastle United','Nottingham Forest','Southampton','Tottenham','West Ham United','Wolves'];
-  var CHAMPIONSHIP_TEAMS = ['Blackburn Rovers','Bristol City','Burnley','Cardiff City','Coventry City','Derby County','Hull City','Leeds United','Luton Town','Middlesbrough','Millwall','Norwich City','Oxford United','Plymouth Argyle','Portsmouth','Preston North End','Queens Park Rangers','Sheffield United','Sheffield Wednesday','Stoke City','Sunderland','Swansea City','Watford','West Bromwich Albion'];
-  var L1_TEAMS = ['Birmingham City','Blackpool','Bolton Wanderers','Bristol Rovers','Burton Albion','Cambridge United','Charlton Athletic','Exeter City','Huddersfield Town','Leyton Orient','Lincoln City','Mansfield Town','Northampton Town','Peterborough United','Reading','Rotherham United','Shrewsbury Town','Stevenage','Stockport County','Wigan Athletic','Wycombe Wanderers'];
-
-  // Auto-detect from team name if competition not explicitly set
-  if (!comp || comp === 'match previews' || comp === 'match reports') {
-    if (PL_TEAMS.indexOf(team) >= 0) comp = 'premier league';
-    else if (CHAMPIONSHIP_TEAMS.indexOf(team) >= 0) comp = 'championship';
-    else if (L1_TEAMS.indexOf(team) >= 0) comp = 'league one';
-    else comp = 'league two'; // default for lower league teams
-  }
-
-  var channelInfo = '';
-  var liveFootballLink = '<a href="https://www.live-footballontv.com/" target="_blank" style="color:#1d4ed8;">live-footballontv.com</a>';
-
-  if (comp.indexOf('premier league') >= 0) {
-    channelInfo = '<p>Premier League matches are broadcast across <strong>Sky Sports</strong>, <strong>TNT Sports</strong>, and <strong>Amazon Prime Video</strong> in the UK. '
-      + 'Check ' + liveFootballLink + ' for confirmed broadcast details for this specific fixture, including which Sky Sports channel (Main Event, Premier League, Ultra HDR) and kick-off time.</p>'
-      + '<p>Streaming options include <strong>Sky Go</strong>, <strong>NOW TV</strong> (Sky Sports day pass or monthly), <strong>TNT Sports</strong> via discovery+, and <strong>Amazon Prime Video</strong> for selected rounds.</p>';
-  } else if (comp.indexOf('championship') >= 0) {
-    channelInfo = '<p>Championship matches are available on <strong>Sky Sports+</strong> and <strong>Sky Sports Football</strong>. '
-      + 'Selected fixtures are also shown on <strong>Sky Sports Main Event</strong>. Check ' + liveFootballLink + ' for confirmed broadcast details.</p>'
-      + '<p>UK streaming via <strong>Sky Go</strong> or <strong>NOW TV</strong>. Overseas supporters can use the <strong>iFollow</strong> service from each club\'s official website.</p>';
-  } else if (comp.indexOf('league one') >= 0 || comp.indexOf('league two') >= 0) {
-    var leagueName = comp.indexOf('league one') >= 0 ? 'League One' : 'League Two';
-    channelInfo = '<p>All ' + leagueName + ' matches are available to watch on <strong>Sky Sports+</strong>, the dedicated channel for EFL coverage. '
-      + 'UK subscribers can also stream via the <strong>Sky Go</strong> app or watch through <strong>NOW TV</strong> with a Sky Sports day pass or monthly membership.</p>'
-      + '<p>For supporters based overseas, both clubs offer live streaming through the <strong>iFollow</strong> service, available via each club\'s official website.</p>';
-  } else {
-    channelInfo = '<p>For confirmed broadcast and streaming details for this fixture, check ' + liveFootballLink + ' which lists every live football match on UK TV.</p>';
-  }
-
-  return '<h2>How to Watch ' + team + ' vs ' + opponent + '</h2>\n' + channelInfo;
+  // Simple, clean approach: funnel readers to WhatChan's own TV listings page
+  // This is always accurate (the site is updated daily) and drives traffic
+  return '<h2>How to Watch ' + escHtml(team) + ' vs ' + escHtml(opponent) + '</h2>\n'
+    + '<p>For full broadcast details including TV channel, kick-off time, and streaming options for this fixture, visit '
+    + '<a href="https://whatchan.co.uk/today" target="_blank" style="color:#1d4ed8;font-weight:600;">whatchan.co.uk/today</a>'
+    + ' &mdash; our daily guide to every live football match on UK television, updated throughout the day.</p>';
 }
 
 function insertAtPercent(bodyHtml, contentHtml, targetPct, commentTag) {
